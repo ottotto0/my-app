@@ -29,7 +29,6 @@ export default function CharacterDetail() {
       <h2>{character.name}</h2>
       <p>年齢: {character.age}</p>
       <p>{character.description}</p>
-      <Link href={`/characters/${id}/chat`}>キャラと会話</Link>
       <Link href={`/characters/${id}/edit`}>編集ページへ</Link>
       <button onClick={handleDelete}>削除</button><br/>
       <Link href="/characters">← 一覧へ戻る</Link>
