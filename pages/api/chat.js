@@ -1,47 +1,88 @@
-export default async function handler(req, res) {
-  try {
-    const { character, messages } = req.body
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/router'
+import { supabase } from '../../../lib/supabaseClient'
+import { getGeminiResponse } from '../../../lib/geminiClient'
 
-    // 会話履歴をGemini形式に変換
-    const contents = messages.map((m) => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: m.message }]
-    }))
+export default function CharacterChat() {
+  const router = useRouter()
+  const { id } = router.query
 
-    // 最後にキャラ設定を追加
-    contents.unshift({
-      role: 'user',
-      parts: [{
-        text: `
-あなたはキャラクター「${character.name}」として会話します。
-キャラの設定：
-${character.description}
+  const [character, setCharacter] = useState(null)
+  const [records, setRecords] = useState([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
 
-キャラになりきって、自然で感情豊かな日本語で会話してください。
-`
-      }]
-    })
-
-    // Gemini API 呼び出し
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents })
+  // キャラ情報読み込み
+  useEffect(() => {
+    if (!id) return
+    const load = async () => {
+      const { data } = await supabase.from('characters').select('*').eq('id', id).single()
+      if (data) {
+        setCharacter(data)
+        setRecords(data.records ? JSON.parse(data.records) : [])
       }
-    )
+    }
+    load()
+  }, [id])
 
-    const data = await response.json()
+  const handleSend = async (e) => {
+    e.preventDefault()
+    if (!input.trim()) return
+    const userMessage = { role: "user", message: input }
 
-    // Geminiの応答テキストを抽出
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
-      '……（無言）'
+    const newRecords = [...records, userMessage]
+    setRecords(newRecords)
+    setInput('')
+    setLoading(true)
 
-    return res.status(200).json({ reply })
-  } catch (error) {
-    console.error('Gemini API error:', error)
-    return res.status(500).json({ reply: '（エラーが発生しました）' })
+    // Geminiに問い合わせ
+    const reply = await getGeminiResponse(character, input, newRecords)
+
+    const aiMessage = { role: "assistant", message: reply }
+    const updatedRecords = [...newRecords, aiMessage]
+    setRecords(updatedRecords)
+
+    // Supabaseに保存
+    await supabase.from('characters').update({ records: JSON.stringify(updatedRecords) }).eq('id', id)
+
+    setLoading(false)
   }
+
+  if (!character) return <div>読み込み中...</div>
+
+  return (
+    <div style={{ padding: 24, maxWidth: 600, margin: 'auto' }}>
+      <h2>💬 {character.name}との会話</h2>
+
+      <div style={{
+        border: '1px solid #ccc',
+        borderRadius: 8,
+        padding: 16,
+        height: 400,
+        overflowY: 'auto',
+        background: '#fafafa'
+      }}>
+        {records.map((r, i) => (
+          <div key={i} style={{ marginBottom: 8 }}>
+            <b>{r.role === 'user' ? 'あなた' : character.name}：</b> {r.message}
+          </div>
+        ))}
+        {loading && <div>{character.name}が考え中...</div>}
+      </div>
+
+      <form onSubmit={handleSend} style={{ marginTop: 12 }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="メッセージを入力..."
+          style={{ width: '80%', padding: 8 }}
+        />
+        <button type="submit" style={{ padding: 8 }}>送信</button>
+      </form>
+
+      <button onClick={() => router.push(`/characters/${id}`)} style={{ marginTop: 12 }}>
+        ← キャラ情報ページへ戻る
+      </button>
+    </div>
+  )
 }
