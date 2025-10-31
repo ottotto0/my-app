@@ -10,6 +10,7 @@ export default function CharacterChat() {
   const [records, setRecords] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   // キャラ情報読み込み
   useEffect(() => {
@@ -66,6 +67,21 @@ export default function CharacterChat() {
     }
   }
 
+   // 🧹 会話履歴を削除
+  const handleClearHistory = async () => {
+    if (!confirm('本当にこのキャラとの会話履歴を削除しますか？')) return
+    setClearing(true)
+
+    await supabase
+      .from('characters')
+      .update({ records: JSON.stringify([]) })
+      .eq('id', id)
+
+    setRecords([])
+    setClearing(false)
+    alert('履歴を削除しました。')
+  }
+  
   if (!character) return <div>読み込み中...</div>
 
   return (
@@ -101,6 +117,15 @@ export default function CharacterChat() {
       <button onClick={() => router.push(`/characters/${id}`)} style={{ marginTop: 12 }}>
         ← キャラ情報ページへ戻る
       </button>
+
+      <button
+          onClick={handleClearHistory}
+          disabled={clearing}
+          style={{ backgroundColor: '#f66', color: 'white', padding: '8px 12px', borderRadius: 6 }}
+        >
+          {clearing ? '削除中…' : '🧹 会話履歴を削除'}
+        </button>
+          
     </div>
   )
 }
