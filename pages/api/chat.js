@@ -1,46 +1,40 @@
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { messages } = req.body;
+
   try {
-    const { character, messages } = req.body
-
-    // Gemini へ渡す「システム＋ユーザー履歴」構築
-    const prompt = `
-あなたはキャラクター「${character.name}」です。
-キャラの設定：
-${character.description}
-
-以下はこれまでの会話履歴です。
-この流れを踏まえて、次のユーザー発言に返答してください。
-${messages.map(m => `${m.role === "user" ? "ユーザー" : "あなた"}: ${m.message}`).join('\n')}
-`
-
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: prompt }]
-            }
-          ]
-        })
+          contents: messages.map((msg) => ({
+            role: msg.role === "user" ? "user" : "model",
+            parts: [{ text: msg.content }],
+          })),
+        }),
       }
-    )
+    );
 
-    const data = await response.json()
+    const data = await response.json();
 
-    console.log("Gemini API response:", JSON.stringify(data, null, 2)) // ← デバッグ用ログ
+    if (data.error) {
+      console.error("Gemini API error:", data.error);
+      return res.status(500).json({ error: data.error.message });
+    }
 
     const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      data?.candidates?.[0]?.output_text ||
-      "（AIの返答が取得できませんでした）"
+      data.candidates?.[0]?.content?.parts?.[0]?.text || "……（無言）";
 
-    res.status(200).json({ reply })
+    res.status(200).json({ reply });
   } catch (error) {
-    console.error("Gemini API error:", error)
-    res.status(500).json({ reply: "（サーバーエラーが発生しました）" })
+    console.error("Error calling Gemini API:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 }
