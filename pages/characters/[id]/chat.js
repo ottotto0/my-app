@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../../lib/supabaseClient'
+import { getGeminiResponse } from '../../../lib/geminiClient'
 
 export default function CharacterChat() {
   const router = useRouter()
@@ -10,6 +11,7 @@ export default function CharacterChat() {
   const [records, setRecords] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   // キャラ情報読み込み
   useEffect(() => {
@@ -24,46 +26,41 @@ export default function CharacterChat() {
     load()
   }, [id])
 
+  // メッセージ送信
   const handleSend = async (e) => {
     e.preventDefault()
     if (!input.trim()) return
+    const userMessage = { role: "user", message: input }
 
-    const userMessage = { role: 'user', message: input }
     const newRecords = [...records, userMessage]
     setRecords(newRecords)
     setInput('')
     setLoading(true)
 
-    try {
-      // ✅ 自作API経由でGeminiに問い合わせ
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          character,
-          userMessage: input,
-          records: newRecords
-        }),
-      })
+    const reply = await getGeminiResponse(character, input, newRecords)
 
-      const data = await res.json()
-      const reply = data.reply || '（返答が取得できませんでした）'
+    const aiMessage = { role: "assistant", message: reply }
+    const updatedRecords = [...newRecords, aiMessage]
+    setRecords(updatedRecords)
 
-      const aiMessage = { role: 'assistant', message: reply }
-      const updatedRecords = [...newRecords, aiMessage]
-      setRecords(updatedRecords)
+    await supabase.from('characters').update({ records: JSON.stringify(updatedRecords) }).eq('id', id)
 
-      // Supabaseに保存
-      await supabase
-        .from('characters')
-        .update({ records: JSON.stringify(updatedRecords) })
-        .eq('id', id)
-    } catch (err) {
-      console.error(err)
-      alert('通信エラーが発生しました')
-    } finally {
-      setLoading(false)
-    }
+    setLoading(false)
+  }
+
+  // 🧹 会話履歴を削除
+  const handleClearHistory = async () => {
+    if (!confirm('本当にこのキャラとの会話履歴を削除しますか？')) return
+    setClearing(true)
+
+    await supabase
+      .from('characters')
+      .update({ records: JSON.stringify([]) })
+      .eq('id', id)
+
+    setRecords([])
+    setClearing(false)
+    alert('履歴を削除しました。')
   }
 
   if (!character) return <div>読み込み中...</div>
@@ -80,6 +77,7 @@ export default function CharacterChat() {
         overflowY: 'auto',
         background: '#fafafa'
       }}>
+        {records.length === 0 && <div style={{ color: '#777' }}>まだ会話はありません。</div>}
         {records.map((r, i) => (
           <div key={i} style={{ marginBottom: 8 }}>
             <b>{r.role === 'user' ? 'あなた' : character.name}：</b> {r.message}
@@ -98,9 +96,18 @@ export default function CharacterChat() {
         <button type="submit" style={{ padding: 8 }}>送信</button>
       </form>
 
-      <button onClick={() => router.push(`/characters/${id}`)} style={{ marginTop: 12 }}>
-        ← キャラ情報ページへ戻る
-      </button>
+      <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+        <button onClick={() => router.push(`/characters/${id}`)}>
+          ← キャラ情報ページへ戻る
+        </button>
+        <button
+          onClick={handleClearHistory}
+          disabled={clearing}
+          style={{ backgroundColor: '#f66', color: 'white', padding: '8px 12px', borderRadius: 6 }}
+        >
+          {clearing ? '削除中…' : '🧹 会話履歴を削除'}
+        </button>
+      </div>
     </div>
   )
 }
