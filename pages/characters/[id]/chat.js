@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../../lib/supabaseClient'
-import { getGeminiResponse } from '../../../lib/geminiClient'
 
 export default function CharacterChat() {
   const router = useRouter()
@@ -28,24 +27,43 @@ export default function CharacterChat() {
   const handleSend = async (e) => {
     e.preventDefault()
     if (!input.trim()) return
-    const userMessage = { role: "user", message: input }
 
+    const userMessage = { role: 'user', message: input }
     const newRecords = [...records, userMessage]
     setRecords(newRecords)
     setInput('')
     setLoading(true)
 
-    // Geminiに問い合わせ
-    const reply = await getGeminiResponse(character, input, newRecords)
+    try {
+      // ✅ 自作API経由でGeminiに問い合わせ
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          character,
+          userMessage: input,
+          records: newRecords
+        }),
+      })
 
-    const aiMessage = { role: "assistant", message: reply }
-    const updatedRecords = [...newRecords, aiMessage]
-    setRecords(updatedRecords)
+      const data = await res.json()
+      const reply = data.reply || '（返答が取得できませんでした）'
 
-    // Supabaseに保存
-    await supabase.from('characters').update({ records: JSON.stringify(updatedRecords) }).eq('id', id)
+      const aiMessage = { role: 'assistant', message: reply }
+      const updatedRecords = [...newRecords, aiMessage]
+      setRecords(updatedRecords)
 
-    setLoading(false)
+      // Supabaseに保存
+      await supabase
+        .from('characters')
+        .update({ records: JSON.stringify(updatedRecords) })
+        .eq('id', id)
+    } catch (err) {
+      console.error(err)
+      alert('通信エラーが発生しました')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (!character) return <div>読み込み中...</div>
