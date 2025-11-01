@@ -15,18 +15,25 @@ export default function AnimeGenerator() {
     setImageUrl(null)
 
     try {
-      // Hugging Face API へ接続
-      const client = await Client.connect("frogleo/anime-ai-generator", {
-        token: process.env.NEXT_PUBLIC_HUGGINGFACE_TOKEN, 
+      console.log('🪄 画像生成開始！')
+      console.log('🧩 使用トークン（Render環境変数）:', process.env.HUGGINGFACE_TOKEN ? '✅ 存在します' : '❌ 見つかりません')
+      console.log('🎯 プロンプト:', prompt)
+      console.log('🚫 ネガティブプロンプト:', negativePrompt)
+
+      // Hugging Face APIへ接続
+      const client = await Client.connect('frogleo/anime-ai-generator', {
+        token: process.env.HUGGINGFACE_TOKEN,
       })
 
+      console.log('✅ Hugging Face接続成功')
+
       // 推論リクエスト
-      const result = await client.predict("/generate", {
+      const result = await client.predict('/generate', {
         prompt,
         negative_prompt: negativePrompt,
         width: 512,
         height: 512,
-        scheduler: "DPM++ 2M Karras",
+        scheduler: 'DPM++ 2M Karras',
         opt_strength: 0,
         opt_scale: 1,
         seed: 0,
@@ -35,21 +42,26 @@ export default function AnimeGenerator() {
         num_inference_steps: 30,
       })
 
-      console.log("🔍 Response:", result)
+      console.log('🔍 Hugging Faceレスポンス:', result)
 
       // 出力画像URLを取得
-      const output = result.data[0]
+      const output = result.data?.[0]
+      console.log('🖼️ 出力データ型:', typeof output, '中身:', output)
+
       if (output && output.url) {
+        console.log('✅ output.url が存在:', output.url)
         setImageUrl(output.url)
-      } else if (typeof output === "string") {
-        // stringの場合も想定
+      } else if (typeof output === 'string') {
+        console.log('✅ outputがstringとして検出:', output)
         setImageUrl(output)
       } else {
-        setError("画像が取得できませんでした。")
+        console.error('⚠️ 出力フォーマットが想定外:', result.data)
+        setError('画像が取得できませんでした。')
       }
     } catch (err) {
-      console.error(err)
-      setError("画像生成に失敗しました。")
+      console.error('❌ エラー詳細:', err)
+      if (err.response) console.error('🌐 レスポンス:', err.response)
+      setError('画像生成に失敗しました。')
     } finally {
       setLoading(false)
     }
