@@ -11,29 +11,52 @@ export default function CreateCharacter() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    console.log('🟢 フォーム送信開始')
 
     let image_url = null
 
     // 画像をSupabase Storageへアップロード
     if (imageFile) {
       const fileName = `${Date.now()}_${imageFile.name}`
-      const { data, error } = await supabase.storage
+      console.log('🟡 アップロードするファイル名:', fileName)
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('character-icons')
         .upload(fileName, imageFile)
 
-      if (!error) {
-        const { data: publicUrl } = supabase.storage
+      if (uploadError) {
+        console.error('🔴 アップロードエラー:', uploadError)
+      } else {
+        console.log('🟢 アップロード成功:', uploadData)
+
+        const { data: publicUrlData, error: publicUrlError } = supabase.storage
           .from('character-icons')
           .getPublicUrl(fileName)
-        image_url = publicUrl.publicUrl
+
+        if (publicUrlError) {
+          console.error('🔴 URL取得エラー:', publicUrlError)
+        } else {
+          console.log('🟢 取得したPublic URLデータ:', publicUrlData)
+          image_url = publicUrlData.publicUrl
+          console.log('🟢 保存予定のimage_url:', image_url)
+        }
       }
+    } else {
+      console.log('⚪ 画像ファイルが選択されていません')
     }
 
-    const { error } = await supabase
+    // charactersテーブルにデータ挿入
+    const { data: insertData, error: insertError } = await supabase
       .from('characters')
       .insert([{ name, age, description, image_url }])
+      .select()
 
-    if (!error) router.push('/characters')
+    if (insertError) {
+      console.error('🔴 挿入エラー:', insertError)
+    } else {
+      console.log('🟢 挿入成功:', insertData)
+      router.push('/characters')
+    }
   }
 
   return (
