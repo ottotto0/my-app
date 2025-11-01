@@ -14,7 +14,7 @@ export default function ImageGenerator() {
     setLog([]);
 
     try {
-      const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
+      const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {hf_token: process.env.HF_TOKEN,});
 
       // 1️⃣ プリセット適用
       let result = await client.predict("/_apply_preset_ui", {
