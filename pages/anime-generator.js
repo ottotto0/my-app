@@ -16,7 +16,7 @@ export default function AnimeGenerator() {
 
     try {
       console.log('🪄 画像生成開始！')
-      console.log('🧩 使用トークン（Render環境変数）:', process.env.HUGGINGFACE_TOKEN ? '✅ 存在します' : '❌ 見つかりません')
+      console.log('🧩 使用トークン（Render環境変数）:', process.env.NEXT_PUBLIC_HUGGINGFACE_TOKEN ? '✅ 存在します' : '❌ 見つかりません')
       console.log('🎯 プロンプト:', prompt)
       console.log('🚫 ネガティブプロンプト:', negativePrompt)
 
