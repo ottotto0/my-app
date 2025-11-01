@@ -14,27 +14,31 @@ export default function ImageGenerator() {
     setLog([]);
 
     try {
-      const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {hf_token: process.env.HF_TOKEN,});
+      // ✅ Hugging Face トークンを使って接続（Renderの環境変数から）
+      const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
+        hf_token: process.env.NEXT_PUBLIC_HF_TOKEN || process.env.HF_TOKEN,
+      });
+      setLog((prev) => [...prev, "🔑 Connected to Hugging Face Space"]);
 
       // 1️⃣ プリセット適用
       let result = await client.predict("/_apply_preset_ui", {
         preset: "768×768 (square)",
       });
-      setLog((prev) => [...prev, "✅ preset applied"]);
+      setLog((prev) => [...prev, "✅ Preset applied"]);
 
       // 2️⃣ リスケール設定
       result = await client.predict("/toggle_rescale", {
         no_rescale: true,
       });
-      setLog((prev) => [...prev, "✅ no_rescale enabled"]);
+      setLog((prev) => [...prev, "✅ Rescale toggled"]);
 
       // 3️⃣ 翻訳ON
       result = await client.predict("/toggle_translate", {
         on: true,
       });
-      setLog((prev) => [...prev, "✅ translation enabled"]);
+      setLog((prev) => [...prev, "✅ Translation enabled"]);
 
-      // 4️⃣ 実際の画像生成（main inference）
+      // 4️⃣ 画像生成（main inference）
       result = await client.predict("/infer", {
         model: "v150",
         prompt: prompt,
@@ -50,19 +54,28 @@ export default function ImageGenerator() {
         use_quality: true,
       });
 
-      setLog((prev) => [...prev, "✅ inference done"]);
+      setLog((prev) => [...prev, "✅ Inference complete"]);
 
-      // 5️⃣ 生成結果を取得（GradioはBase64 or URLを返す）
-      const imageData = result.data?.[0]?.url || result.data?.[0];
+      // 5️⃣ 結果画像の取得（URL or Base64）
+      let imageData = null;
+
+      // Gradioが返す形式を両対応
+      if (Array.isArray(result.data)) {
+        const possibleImage = result.data.find((d) => typeof d === "string" && (d.startsWith("http") || d.startsWith("data:image")));
+        imageData = possibleImage || result.data?.[0]?.url || result.data?.[0];
+      } else if (typeof result.data === "string") {
+        imageData = result.data;
+      }
+
       if (imageData) {
         setImageUrl(imageData);
-        setLog((prev) => [...prev, "✅ image URL loaded"]);
+        setLog((prev) => [...prev, "🖼️ Image loaded successfully"]);
       } else {
-        setLog((prev) => [...prev, "⚠️ no image found in response"]);
+        setLog((prev) => [...prev, "⚠️ No image data found in response"]);
       }
     } catch (err) {
       console.error(err);
-      setLog((prev) => [...prev, `❌ error: ${err.message}`]);
+      setLog((prev) => [...prev, `❌ Error: ${err.message}`]);
     }
 
     setLoading(false);
@@ -70,13 +83,13 @@ export default function ImageGenerator() {
 
   return (
     <div className="p-6 flex flex-col items-center gap-4">
-      <h1 className="text-2xl font-bold mb-4">✨ Image Generator (Gradio) ✨</h1>
+      <h1 className="text-2xl font-bold mb-4">🪄 Hugging Face Image Generator</h1>
 
       <input
         type="text"
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
-        placeholder="プロンプトを入力してください"
+        placeholder="プロンプトを入力してください（例：1girl, detailed eyes, fantasy light）"
         className="border p-2 w-80 rounded text-center"
       />
 
@@ -96,11 +109,18 @@ export default function ImageGenerator() {
             alt="Generated"
             className="rounded-lg shadow-md border w-[512px] h-[512px] object-cover"
           />
+          <a
+            href={imageUrl}
+            download="generated_image.png"
+            className="block mt-3 text-blue-600 hover:underline text-sm"
+          >
+            💾 画像をダウンロード
+          </a>
         </div>
       )}
 
-      <div className="mt-6 w-full max-w-lg text-left bg-gray-100 p-3 rounded text-sm">
-        <h3 className="font-semibold mb-2">🪵 実行ログ：</h3>
+      <div className="mt-6 w-full max-w-lg text-left bg-gray-100 p-3 rounded text-sm overflow-auto max-h-64">
+        <h3 className="font-semibold mb-2">📜 実行ログ：</h3>
         {log.map((line, i) => (
           <div key={i}>{line}</div>
         ))}
