@@ -17,7 +17,7 @@ export default function AnimeGenerator() {
     try {
       // Hugging Face API へ接続
       const client = await Client.connect("frogleo/anime-ai-generator", {
-        token: process.env.NEXT_PUBLIC_HUGGINGFACE_TOKEN, // publicでないなら.envでHUGGINGFACE_TOKEN
+        token: process.env.HUGGINGFACE_TOKEN, // publicでないなら.envでHUGGINGFACE_TOKEN
       })
 
       // 推論リクエスト
