@@ -33,12 +33,12 @@ export default function EditCharacter() {
     if (imageFile) {
       const fileName = `${Date.now()}_${imageFile.name}`
       const { data, error } = await supabase.storage
-        .from('character-icons')
+        .from('my-app')
         .upload(fileName, imageFile)
 
       if (!error) {
         const { data: publicUrl } = supabase.storage
-          .from('character-icons')
+          .from('my-app')
           .getPublicUrl(fileName)
         image_url = publicUrl.publicUrl
       }
