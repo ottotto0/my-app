@@ -1,77 +1,74 @@
+// image.js
 import { Client } from "@gradio/client";
 
-async function runAll() {
-  const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
+/**
+ * waiNSFWIllustrious_v140 の Gradio API に接続して
+ * 一連のテスト呼び出しを実行するスクリプト
+ */
+async function main() {
+  try {
+    console.log("🔗 Connecting to Gradio client...");
+    const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
+    console.log("✅ Connected!\n");
 
-  // 1️⃣ Apply preset
-  let result = await client.predict("/_apply_preset_ui", { preset: "768×768 (square)" });
-  console.log("preset:", result.data);
+    // 1️⃣ apply preset
+    console.log("▶ Applying preset...");
+    let result = await client.predict("/_apply_preset_ui", {
+      preset: "768×768 (square)",
+    });
+    console.log("✅ Preset applied:", result.data, "\n");
 
-  // 2️⃣ Toggle rescale
-  result = await client.predict("/toggle_rescale", { no_rescale: true });
-  console.log("toggle_rescale:", result.data);
+    // 2️⃣ toggle rescale
+    console.log("▶ Toggling rescale...");
+    result = await client.predict("/toggle_rescale", { no_rescale: true });
+    console.log("✅ Rescale toggled:", result.data, "\n");
 
-  // 3️⃣ Toggle translate
-  result = await client.predict("/toggle_translate", { on: true });
-  console.log("toggle_translate:", result.data);
+    // 3️⃣ toggle translate
+    console.log("▶ Enabling translation...");
+    result = await client.predict("/toggle_translate", { on: true });
+    console.log("✅ Translation enabled:", result.data, "\n");
 
-  // 4️⃣ Move prompt
-  result = await client.predict("/move_prompt_to_non_english", { prompt_text: "Hello!!" });
-  console.log("move_prompt:", result.data);
+    // 4️⃣ move prompt
+    console.log("▶ Moving prompt...");
+    result = await client.predict("/move_prompt_to_non_english", {
+      prompt_text: "Hello!!",
+    });
+    console.log("✅ Prompt moved:", result.data, "\n");
 
-  // 5️⃣ Translate text
-  result = await client.predict("/translate_text", { text: "Hello!!" });
-  console.log("translate_text:", result.data);
+    // 5️⃣ compute token count
+    console.log("▶ Computing token count...");
+    result = await client.predict("/compute_token_count", {
+      prompt: "Hello!!",
+      quality_prompt: "Hello!!",
+      use_quality: true,
+    });
+    console.log("✅ Token count computed:", result.data, "\n");
 
-  // 6️⃣ Toggle controls
-  result = await client.predict("/toggle_controls", { hide: true });
-  console.log("toggle_controls:", result.data);
+    // 6️⃣ 最後に生成（例）
+    console.log("▶ Generating image...");
+    result = await client.predict("/generate", {
+      prompt: "a cute anime girl with blonde hair and blue eyes, detailed lighting",
+      negative_prompt: "low quality, blurry",
+      width: 768,
+      height: 768,
+      steps: 20,
+      cfg_scale: 7,
+      sampler: "Euler a",
+      seed: 42,
+    });
 
-  // 7️⃣ Clear history
-  result = await client.predict("/clear_history", {});
-  console.log("clear_history:", result.data);
+    // 画像データを取得
+    const output = result?.data?.[0]?.url || null;
+    console.log("✅ Image generated!\n🖼️ URL:", output);
 
-  // 8️⃣ Download all
-  result = await client.predict("/download_all", {});
-  console.log("download_all:", result.data);
-
-  // 9️⃣ Toggle quality prompt
-  result = await client.predict("/toggle_quality_prompt", { enabled: true });
-  console.log("toggle_quality_prompt:", result.data);
-
-  // 🔟 Compute token count
-  result = await client.predict("/compute_token_count", {
-    prompt: "Hello!!",
-    quality_prompt: "Hello!!",
-    use_quality: true,
-  });
-  console.log("compute_token_count:", result.data);
-
-  // 11️⃣ Compute token count 1
-  result = await client.predict("/compute_token_count_1", {
-    prompt: "Hello!!",
-    quality_prompt: "Hello!!",
-    use_quality: true,
-  });
-  console.log("compute_token_count_1:", result.data);
-
-  // 12️⃣ Infer
-  result = await client.predict("/infer", {
-    model: "v150",
-    prompt: "girl",
-    quality_prompt: "high quality",
-    negative_prompt: "low quality",
-    seed: 0,
-    randomize_seed: true,
-    width: 256,
-    height: 256,
-    guidance_scale: 0,
-    num_inference_steps: 1,
-    num_images: 1,
-    use_quality: true,
-  });
-  console.log("infer:", result.data);
+  } catch (err) {
+    console.error("❌ Error during Gradio call:", err);
+  }
 }
 
-// 実行
-runAll();
+// Node.js または Next.js edge runtime 対応
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}
+
+export default main;
