@@ -42,8 +42,8 @@ export default function ImageGenerator() {
       result = await client.predict("/infer", {
         model: "v150",
         prompt: prompt,
-        quality_prompt: "masterpiece, best quality, fine details",
-        negative_prompt: "low quality, bad anatomy",
+        quality_prompt: "score_9, score_8_up, score_7_up, score_6_up, warm color, masterpiece, best quality, ultra-detailed, high resoolution, 8K, detailed background",
+        negative_prompt: "lowres, worst quality, low quality, simple background, white background simple background, bad anatomy, bad hands, signature, text, watermark, extra digits, red pupils, green pupils",
         seed: 0,
         randomize_seed: true,
         width: 512,
