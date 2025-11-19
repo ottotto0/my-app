@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "postinstall": "puppeteer browsers install chrome"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.44.0",
