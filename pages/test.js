@@ -1,121 +1,63 @@
 import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/_apply_preset_ui", { 		
-			preset: "768×768 (square)", 
-	});
 
-	console.log(result.data);
+document.body.innerHTML = `
+  <div style="width:100%; max-width:480px; margin:40px auto; font-family:sans-serif;">
+    <h2>画像生成テスト</h2>
 
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/toggle_rescale", { 		
-			no_rescale: true, 
-	});
+    <input id="prompt" type="text" placeholder="プロンプトを入力" 
+      style="width:100%; padding:10px; font-size:16px;" />
 
-	console.log(result.data);
+    <button id="gen" 
+      style="margin-top:10px; padding:10px 20px; font-size:16px; cursor:pointer;">
+      生成
+    </button>
 
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/toggle_translate", { 		
-			on: true, 
-	});
+    <div id="status" style="margin-top:20px; font-size:14px;"></div>
+    <img id="result" style="margin-top:20px; width:100%; display:none;" />
+  </div>
+`;
 
-	console.log(result.data);
+async function runGenerate() {
+    const prompt = document.getElementById("prompt").value;
+    const status = document.getElementById("status");
+    const resultImg = document.getElementById("result");
 
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/move_prompt_to_non_english", { 		
-			prompt_text: "Hello!!", 
-	});
+    if (!prompt) {
+        status.innerText = "プロンプトを入力してください。";
+        return;
+    }
 
-	console.log(result.data);
+    status.innerText = "生成中…少しお待ちください。";
 
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/translate_text", { 		
-			text: "Hello!!", 
-	});
+    try {
+        const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
 
-	console.log(result.data);
+        const result = await client.predict("/infer", {
+            model: "v150",
+            prompt: prompt,
+            quality_prompt: prompt,
+            negative_prompt: "",
+            seed: 0,
+            randomize_seed: true,
+            width: 512,
+            height: 512,
+            guidance_scale: 5,
+            num_inference_steps: 20,
+            num_images: 1,
+            use_quality: true,
+        });
 
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/toggle_controls", { 		
-			hide: true, 
-	});
+        const blob = result.data[0];
+        const url = URL.createObjectURL(blob);
 
-	console.log(result.data);
+        resultImg.src = url;
+        resultImg.style.display = "block";
+        status.innerText = "生成完了！";
 
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/clear_history", { 
-	});
+    } catch (err) {
+        console.error(err);
+        status.innerText = "エラーが発生しました。コンソールを確認してください。";
+    }
+}
 
-	console.log(result.data);
-
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/download_all", { 
-	});
-
-	console.log(result.data);
-
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/toggle_quality_prompt", { 		
-			enabled: true, 
-	});
-
-	console.log(result.data);
-
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/compute_token_count", { 		
-			prompt: "Hello!!", 		
-			quality_prompt: "Hello!!", 		
-			use_quality: true, 
-	});
-
-	console.log(result.data);
-
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/compute_token_count_1", { 		
-			prompt: "Hello!!", 		
-			quality_prompt: "Hello!!", 		
-			use_quality: true, 
-	});
-
-	console.log(result.data);
-
-import { Client } from "@gradio/client";
-	
-	const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
-	const result = await client.predict("/infer", { 		
-			model: "v150", 		
-			prompt: "Hello!!", 		
-			quality_prompt: "Hello!!", 		
-			negative_prompt: "Hello!!", 		
-			seed: 0, 		
-			randomize_seed: true, 		
-			width: 256, 		
-			height: 256, 		
-			guidance_scale: 0, 		
-			num_inference_steps: 1, 		
-			num_images: 1, 		
-			use_quality: true, 
-	});
-
-	console.log(result.data);
-
+document.getElementById("gen").addEventListener("click", runGenerate);
