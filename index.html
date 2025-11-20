@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>画像生成フォーム</title>
+</head>
+<body>
+    <h2>プロンプトを入力して画像生成</h2>
+    <form id="promptForm">
+        <input type="text" id="promptInput" placeholder="プロンプトを入力" style="width:300px;" required>
+        <button type="submit">生成</button>
+    </form>
+
+    <div id="result" style="margin-top:20px;"></div>
+
+    <script>
+        const form = document.getElementById("promptForm");
+        const resultDiv = document.getElementById("result");
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const prompt = document.getElementById("promptInput").value;
+
+            resultDiv.innerHTML = "生成中…少し待ってください";
+
+            try {
+                const res = await fetch("/generate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt })
+                });
+                const data = await res.json();
+
+                // 返ってくるデータはURLまたはbase64形式
+                // base64の場合は data:image/png;base64, で img に設定
+                const imgUrl = data[0]; // 配列の最初の画像を取得
+                resultDiv.innerHTML = `<img src="${imgUrl}" style="max-width:512px;">`;
+
+            } catch (err) {
+                console.error(err);
+                resultDiv.innerHTML = "エラーが発生しました";
+            }
+        });
+    </script>
+</body>
+</html>
