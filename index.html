@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>SeaArt 画像生成テスター</title>
+</head>
+<body>
+  <h1>SeaArt 画像生成テスト</h1>
+  <input id="prompt" placeholder="プロンプトを入力" size="40">
+  <button onclick="send()">生成</button>
+  <p id="status"></p>
+  <img id="result" width="400">
+
+  <script>
+    async function send() {
+      const prompt = document.getElementById("prompt").value;
+      document.getElementById("status").innerText = "生成中…";
+
+      const res = await fetch("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+
+      const data = await res.json();
+      document.getElementById("result").src = data.image;
+      document.getElementById("status").innerText = "完成！";
+    }
+  </script>
+</body>
+</html>
