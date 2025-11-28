@@ -6,6 +6,7 @@ export default function CreateCharacter() {
   const [name, setName] = useState('')
   const [age, setAge] = useState('')
   const [description, setDescription] = useState('')
+  const [appearance, setAppearance] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const router = useRouter()
 
@@ -48,7 +49,7 @@ export default function CreateCharacter() {
     // charactersテーブルにデータ挿入
     const { data: insertData, error: insertError } = await supabase
       .from('characters')
-      .insert([{ name, age, description, image_url }])
+      .insert([{ name, age, description, appearance, image_url }])
       .select()
 
     if (insertError) {
@@ -82,6 +83,17 @@ export default function CreateCharacter() {
               type="number"
               value={age}
               onChange={(e) => setAge(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="appearance" className="block text-sm font-medium text-gray-700">外見の特徴</label>
+            <textarea
+              id="appearance"
+              placeholder="外見の特徴を入力（例：青い目、長い髪、背が高い）"
+              value={appearance}
+              onChange={(e) => setAppearance(e.target.value)}
+              rows={3}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
             />
           </div>
