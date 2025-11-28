@@ -59,6 +59,22 @@ export default function CharacterChat() {
         .from('characters')
         .update({ records: JSON.stringify(updatedRecords) })
         .eq('id', id)
+
+      // 🖼️ 画像生成プロンプトの作成（非同期で実行し、ユーザーを待たせない）
+      fetch('/api/generate-image-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          character,
+          records: updatedRecords // 最新のAI返答を含めた履歴
+        }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          console.log('🎨 Generated Image Prompt:', data.prompt)
+          // ここで将来的に画像生成APIを呼ぶ予定
+        })
+        .catch(err => console.error('🔴 Prompt Generation Error:', err))
     } catch (err) {
       console.error(err)
       alert('通信エラーが発生しました')
@@ -67,7 +83,7 @@ export default function CharacterChat() {
     }
   }
 
-   // 🧹 会話履歴を削除
+  // 🧹 会話履歴を削除
   const handleClearHistory = async () => {
     if (!confirm('本当にこのキャラとの会話履歴を削除しますか？')) return
     setClearing(true)
@@ -81,7 +97,7 @@ export default function CharacterChat() {
     setClearing(false)
     alert('履歴を削除しました。')
   }
-  
+
   if (!character) return <div>読み込み中...</div>
 
   return (
@@ -119,13 +135,13 @@ export default function CharacterChat() {
       </button>
 
       <button
-          onClick={handleClearHistory}
-          disabled={clearing}
-          style={{ backgroundColor: '#f66', color: 'white', padding: '8px 12px', borderRadius: 6 }}
-        >
-          {clearing ? '削除中…' : '🧹 会話履歴を削除'}
-        </button>
-          
+        onClick={handleClearHistory}
+        disabled={clearing}
+        style={{ backgroundColor: '#f66', color: 'white', padding: '8px 12px', borderRadius: 6 }}
+      >
+        {clearing ? '削除中…' : '🧹 会話履歴を削除'}
+      </button>
+
     </div>
   )
 }
