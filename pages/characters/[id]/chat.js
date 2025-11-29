@@ -115,10 +115,14 @@ export default function CharacterChat() {
 
     await supabase
       .from('characters')
-      .update({ records: JSON.stringify([]) })
+      .update({
+        records: JSON.stringify([]),
+        image_latest_chat_url: null
+      })
       .eq('id', id)
 
     setRecords([])
+    setLatestImage(null)
     setClearing(false)
     alert('履歴を削除しました。')
   }
@@ -181,3 +185,4 @@ export default function CharacterChat() {
     </div>
   )
 }
+
