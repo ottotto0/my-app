@@ -11,6 +11,7 @@ export default function CharacterChat() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [latestImage, setLatestImage] = useState(null)
 
   // キャラ情報読み込み
   useEffect(() => {
@@ -20,6 +21,7 @@ export default function CharacterChat() {
       if (data) {
         setCharacter(data)
         setRecords(data.records ? JSON.parse(data.records) : [])
+        setLatestImage(data.image_latest_chat_url)
       }
     }
     load()
@@ -72,7 +74,30 @@ export default function CharacterChat() {
         .then(res => res.json())
         .then(data => {
           console.log('🎨 Generated Image Prompt:', data.prompt)
-          // ここで将来的に画像生成APIを呼ぶ予定
+
+          if (data.prompt) {
+            // 🖼️ 画像生成を実行
+            console.log('🖼️ Generating Image...')
+            fetch('/api/generate-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt: data.prompt }),
+            })
+              .then(res => res.json())
+              .then(async (imageData) => {
+                if (imageData.image_url) {
+                  console.log('✅ Image Generated:', imageData.image_url)
+                  setLatestImage(imageData.image_url)
+
+                  // Supabaseに最新画像URLを保存
+                  await supabase
+                    .from('characters')
+                    .update({ image_latest_chat_url: imageData.image_url })
+                    .eq('id', id)
+                }
+              })
+              .catch(err => console.error('🔴 Image Generation Error:', err))
+          }
         })
         .catch(err => console.error('🔴 Prompt Generation Error:', err))
     } catch (err) {
@@ -120,6 +145,17 @@ export default function CharacterChat() {
         {loading && <div>{character.name}が考え中...</div>}
       </div>
 
+      {/* 最新画像の表示エリア */}
+      {latestImage && (
+        <div style={{ marginTop: 16, textAlign: 'center' }}>
+          <img
+            src={latestImage}
+            alt="Generated Scene"
+            style={{ maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+          />
+        </div>
+      )}
+
       <form onSubmit={handleSend} style={{ marginTop: 12 }}>
         <input
           value={input}
@@ -137,7 +173,7 @@ export default function CharacterChat() {
       <button
         onClick={handleClearHistory}
         disabled={clearing}
-        style={{ backgroundColor: '#f66', color: 'white', padding: '8px 12px', borderRadius: 6 }}
+        style={{ backgroundColor: '#f66', color: 'white', padding: '8px 12px', borderRadius: 6, marginLeft: 12 }}
       >
         {clearing ? '削除中…' : '🧹 会話履歴を削除'}
       </button>
