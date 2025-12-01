@@ -14,9 +14,19 @@ export default async function handler(req, res) {
     try {
         console.log(`🎨 Generating image for prompt: ${prompt}`);
 
-        const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
-            hf_token: process.env.HF_TOKEN
-        });
+        const hfToken = process.env.HF_TOKEN;
+        let client;
+
+        console.log(`Initializing Gradio Client for Nech-C/waiNSFWIllustrious_v140...`);
+        if (hfToken) {
+            console.log("Using HF_TOKEN for authentication.");
+            client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
+                hf_token: hfToken
+            });
+        } else {
+            console.log("No HF_TOKEN found, using anonymous access.");
+            client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
+        }
 
         const result = await client.predict("/infer", [
             "v140",             // model
