@@ -19,9 +19,11 @@ export default async function handler(req, res) {
 
         console.log(`Initializing Gradio Client for Nech-C/waiNSFWIllustrious_v140...`);
         if (hfToken) {
-            console.log("Using HF_TOKEN for authentication.");
+            console.log(`Using HF_TOKEN for authentication. Token length: ${hfToken.length}`);
+            // Try passing token in both hf_token and headers to be safe
             client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
-                hf_token: hfToken
+                hf_token: hfToken,
+                headers: { "Authorization": `Bearer ${hfToken}` }
             });
         } else {
             console.log("No HF_TOKEN found, using anonymous access.");
