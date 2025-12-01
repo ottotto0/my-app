@@ -15,7 +15,7 @@ export default async function handler(req, res) {
         console.log(`🎨 Generating image for prompt: ${prompt}`);
 
         const client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
-            hf_token: process.env.HF_TOKEN
+            hf_token: process.env.HF_TOKEN_IMAGE
         });
 
         const result = await client.predict("/infer", [
