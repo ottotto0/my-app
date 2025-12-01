@@ -14,19 +14,32 @@ export default async function handler(req, res) {
     try {
         console.log(`🎨 Generating image for prompt: ${prompt}`);
 
-        const hfToken = process.env.HF_TOKEN;
+        const hfToken1 = process.env.HF_TOKEN;
+        const hfToken2 = process.env.HF_TOKEN2;
+
+        // Create array of available tokens
+        const availableTokens = [];
+        if (hfToken1) availableTokens.push({ token: hfToken1, name: "HF_TOKEN" });
+        if (hfToken2) availableTokens.push({ token: hfToken2, name: "HF_TOKEN2" });
+
         let client;
 
         console.log(`Initializing Gradio Client for Nech-C/waiNSFWIllustrious_v140...`);
-        if (hfToken) {
-            console.log(`Using HF_TOKEN for authentication. Token length: ${hfToken.length}`);
+
+        if (availableTokens.length > 0) {
+            // Randomly select a token
+            const selected = availableTokens[Math.floor(Math.random() * availableTokens.length)];
+            const hfToken = selected.token;
+
+            console.log(`Using ${selected.name} for authentication. Token length: ${hfToken.length}`);
+
             // Try passing token in both hf_token and headers to be safe
             client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
                 hf_token: hfToken,
                 headers: { "Authorization": `Bearer ${hfToken}` }
             });
         } else {
-            console.log("No HF_TOKEN found, using anonymous access.");
+            console.log("No HF_TOKEN or HF_TOKEN2 found, using anonymous access.");
             client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
         }
 
