@@ -44,7 +44,7 @@ export default async function handler(req, res) {
         }
 
         const result = await client.predict("/infer", [
-            "v140",             // model
+            "v160",             // model
             prompt,             // prompt
             "masterpiece, best quality, fine details", // quality_prompt
             "blurry, low quality, watermark, monochrome, text", // negative_prompt
