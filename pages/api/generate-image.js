@@ -14,24 +14,39 @@ export default async function handler(req, res) {
     try {
         console.log(`🎨 Generating image for prompt: ${prompt}`);
 
-        const hfToken1 = process.env.HF_TOKEN;
-        const hfToken2 = process.env.HF_TOKEN2;
+        const { createClient } = require('@supabase/supabase-js');
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        const supabase = createClient(supabaseUrl, supabaseKey);
 
-        // Create array of available tokens
-        const availableTokens = [];
-        if (hfToken1) availableTokens.push({ token: hfToken1, name: "HF_TOKEN" });
-        if (hfToken2) availableTokens.push({ token: hfToken2, name: "HF_TOKEN2" });
+        const { data: tokens, error: fetchError } = await supabase
+            .from('hf_tokens')
+            .select('*')
+            .eq('is_active', true)
+            .order('id', { ascending: true });
+
+        if (fetchError) {
+            console.error("Error fetching tokens from Supabase:", fetchError);
+        }
 
         let client;
 
         console.log(`Initializing Gradio Client for Nech-C/waiNSFWIllustrious_v140...`);
 
-        if (availableTokens.length > 0) {
-            // Randomly select a token
-            const selected = availableTokens[Math.floor(Math.random() * availableTokens.length)];
+        if (tokens && tokens.length > 0) {
+            const n = tokens.length;
+            let lastUsedIndex = tokens.findIndex(t => t.is_last_used === true);
+            let nextIndex = (lastUsedIndex === -1) ? 0 : (lastUsedIndex + 1) % n;
+            const selected = tokens[nextIndex];
             const hfToken = selected.token;
 
-            console.log(`Using ${selected.name} for authentication. Token length: ${hfToken.length}`);
+            console.log(`Using token ${selected.name || selected.id} for authentication. Token length: ${hfToken ? hfToken.length : 0}`);
+
+            // Update database state asynchronously
+            Promise.all([
+                supabase.from('hf_tokens').update({ is_last_used: false }).neq('id', selected.id),
+                supabase.from('hf_tokens').update({ is_last_used: true }).eq('id', selected.id)
+            ]).catch(err => console.error("Error updating token status:", err));
 
             // Try passing token in both hf_token and headers to be safe
             client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
@@ -39,7 +54,7 @@ export default async function handler(req, res) {
                 headers: { "Authorization": `Bearer ${hfToken}` }
             });
         } else {
-            console.log("No HF_TOKEN or HF_TOKEN2 found, using anonymous access.");
+            console.log("No active tokens found in Supabase, using anonymous access.");
             client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
         }
 
