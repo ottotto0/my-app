@@ -118,7 +118,7 @@ export default function CharacterChat() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-indigo-50 via-slate-50 to-white px-3 py-4 sm:px-6 sm:py-8">
       <div className="mx-auto flex h-[calc(100dvh-2rem)] max-h-[900px] min-h-[560px] max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_20px_60px_rgba(79,70,229,0.16)] sm:h-[calc(100dvh-4rem)] sm:min-h-[720px]">
-        <header className="flex items-center justify-between border-b border-slate-100 bg-white/90 px-4 py-3 backdrop-blur">
+        <header className="relative z-40 flex items-center justify-between border-b border-slate-100 bg-white/90 px-4 py-3 backdrop-blur">
           <button
             type="button"
             onClick={() => router.push(`/characters/${id}`)}
