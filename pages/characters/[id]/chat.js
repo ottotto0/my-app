@@ -11,7 +11,10 @@ export default function CharacterChat() {
   const [loading, setLoading] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [latestImage, setLatestImage] = useState(null)
-  const messagesEndRef = useRef(null)
+  const [showMessages, setShowMessages] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const messageScrollRef = useRef(null)
+  const menuRef = useRef(null)
 
   useEffect(() => {
     if (!id) return
@@ -27,8 +30,19 @@ export default function CharacterChat() {
   }, [id])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    messageScrollRef.current?.scrollTo({
+      top: messageScrollRef.current.scrollHeight,
+      behavior: 'smooth',
+    })
   }, [records, loading])
+
+  useEffect(() => {
+    const closeMenu = (event) => {
+      if (!menuRef.current?.contains(event.target)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', closeMenu)
+    return () => document.removeEventListener('mousedown', closeMenu)
+  }, [])
 
   const handleSend = async (e) => {
     e.preventDefault()
@@ -94,6 +108,7 @@ export default function CharacterChat() {
     setRecords([])
     setLatestImage(null)
     setClearing(false)
+    setMenuOpen(false)
   }
 
   if (!character) return <div className="min-h-screen grid place-items-center text-slate-500">読み込み中...</div>
@@ -102,7 +117,7 @@ export default function CharacterChat() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-indigo-50 via-slate-50 to-white px-3 py-4 sm:px-6 sm:py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_20px_60px_rgba(79,70,229,0.16)] sm:min-h-[720px]">
+      <div className="mx-auto flex h-[calc(100dvh-2rem)] max-h-[900px] min-h-[560px] max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_20px_60px_rgba(79,70,229,0.16)] sm:h-[calc(100dvh-4rem)] sm:min-h-[720px]">
         <header className="flex items-center justify-between border-b border-slate-100 bg-white/90 px-4 py-3 backdrop-blur">
           <button
             type="button"
@@ -121,31 +136,61 @@ export default function CharacterChat() {
             )}
             <div className="min-w-0 text-left">
               <h1 className="truncate font-bold text-slate-800">{character.name}</h1>
-              <p className="text-xs text-emerald-500">● オンライン</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleClearHistory}
-            disabled={clearing}
-            className="grid h-11 w-11 place-items-center rounded-2xl bg-rose-50 text-lg text-rose-500 transition hover:bg-rose-100 disabled:opacity-50 active:scale-95"
-            aria-label="会話履歴を削除"
-            title="会話履歴を削除"
-          >
-            🗑
-          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 text-xl font-bold text-slate-700 transition hover:bg-slate-200 active:scale-95"
+              aria-label="メニューを開く"
+              aria-expanded={menuOpen}
+              title="メニュー"
+            >
+              ⋮
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-12 z-30 w-52 overflow-hidden rounded-2xl border border-slate-100 bg-white py-1 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => router.push(`/characters/${id}/edit`)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <span>✏️</span> キャラを編集
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearHistory}
+                  disabled={clearing}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                >
+                  <span>🗑️</span> {clearing ? '削除中…' : '会話履歴を削除'}
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
         <section
-          className="relative flex-1 overflow-y-auto bg-slate-100 px-4 py-5 sm:px-6"
+          className="relative min-h-0 flex-1 overflow-hidden bg-slate-100"
           aria-label={`${character.name}との会話`}
-          style={latestImage ? {
-            backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.18), rgba(15, 23, 42, 0.18)), url(${latestImage})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundAttachment: 'fixed',
-          } : undefined}
         >
+          {latestImage && (
+            <img
+              src={latestImage}
+              alt="生成された会話シーン"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+          )}
+          {latestImage && <div className="absolute inset-0 bg-slate-950/10" />}
+          <button
+            type="button"
+            onClick={() => setShowMessages((visible) => !visible)}
+            className="absolute left-4 top-4 z-20 rounded-2xl bg-white/90 px-3 py-2 text-xs font-medium text-slate-700 shadow-md backdrop-blur transition hover:bg-white active:scale-95 sm:left-6"
+          >
+            {showMessages ? '◉ 会話を隠す' : '◌ 会話を表示'}
+          </button>
+          {showMessages && <div ref={messageScrollRef} className="absolute inset-0 z-10 overflow-y-auto px-4 pb-5 pt-16 sm:px-6">
           <div className="mx-auto flex max-w-xl flex-col gap-4">
             {latestImage && (
               <p className="self-center rounded-full bg-slate-950/55 px-3 py-1 text-xs font-medium text-white shadow-sm backdrop-blur">
@@ -170,7 +215,6 @@ export default function CharacterChat() {
                   <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-6 shadow-sm ${isUser ? 'rounded-br-lg bg-indigo-600 text-white' : 'rounded-bl-lg bg-white/95 text-slate-700 backdrop-blur'}`}>
                     {record.message}
                   </div>
-                  {isUser && <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-slate-700 text-xs font-bold text-white shadow-md">私</div>}
                 </div>
               )
             })}
@@ -180,8 +224,9 @@ export default function CharacterChat() {
                 <div className="rounded-3xl rounded-bl-lg bg-white/95 px-4 py-3 text-sm text-slate-500 shadow-sm backdrop-blur">{character.name}が入力中<span className="animate-pulse">...</span></div>
               </div>
             )}
-            <div ref={messagesEndRef} />
+            <div />
           </div>
+          </div>}
         </section>
 
         <form onSubmit={handleSend} className="flex items-center gap-3 border-t border-slate-100 bg-white p-3 sm:p-4">
@@ -206,5 +251,3 @@ export default function CharacterChat() {
     </main>
   )
 }
-
-
