@@ -70,7 +70,9 @@ export default async function handler(req, res) {
             6,                  // guidance_scale
             30,                 // num_inference_steps
             1,                  // num_images
+            [],                 // history
             true,               // use_quality
+            0,                  // language_warning_count
         ]);
 
         // result.data is an array of outputs. The first output is the image.
