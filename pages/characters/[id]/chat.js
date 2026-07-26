@@ -191,7 +191,10 @@ export default function CharacterChat() {
           >
             {showMessages ? '◉ 会話を隠す' : '◌ 会話を表示'}
           </button>
-          {showMessages && <div ref={messageScrollRef} className="absolute inset-0 z-10 overflow-y-auto px-4 pb-5 pt-16 sm:px-6">
+          <div
+            ref={messageScrollRef}
+            className={`absolute inset-0 z-10 overflow-y-auto px-4 pb-5 pt-16 transition-opacity sm:px-6 ${showMessages ? 'opacity-100' : 'pointer-events-none invisible opacity-0'}`}
+          >
           <div className="mx-auto flex max-w-xl flex-col gap-4">
             {!records.length && !loading && (
               <div className="mt-16 rounded-3xl bg-white/85 p-6 text-center text-sm leading-6 text-slate-600 shadow-sm backdrop-blur">
@@ -208,7 +211,7 @@ export default function CharacterChat() {
                   ) : (
                     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-indigo-500 text-sm font-bold text-white shadow-md">{characterInitial}</div>
                   ))}
-                  <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-6 shadow-sm backdrop-blur-md ${isUser ? 'rounded-br-lg bg-indigo-600/75 text-white' : 'rounded-bl-lg bg-white/65 text-slate-800'}`}>
+                  <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-6 shadow-sm backdrop-blur-md ${isUser ? 'rounded-br-lg bg-indigo-600/55 text-white' : 'rounded-bl-lg bg-white/40 text-slate-800'}`}>
                     {record.message}
                   </div>
                 </div>
@@ -217,12 +220,12 @@ export default function CharacterChat() {
             {loading && (
               <div className="flex items-end gap-2">
                 {character.image_url ? <img src={character.image_url} alt="" className="h-9 w-9 rounded-2xl object-cover shadow-md" /> : <div className="grid h-9 w-9 place-items-center rounded-2xl bg-indigo-500 text-sm font-bold text-white">{characterInitial}</div>}
-                <div className="rounded-3xl rounded-bl-lg bg-white/65 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-md">{character.name}が入力中<span className="animate-pulse">...</span></div>
+                <div className="rounded-3xl rounded-bl-lg bg-white/40 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-md">{character.name}が入力中<span className="animate-pulse">...</span></div>
               </div>
             )}
             <div />
           </div>
-          </div>}
+          </div>
         </section>
 
         <form onSubmit={handleSend} className="flex items-center gap-3 border-t border-slate-100 bg-white p-3 sm:p-4">
