@@ -202,13 +202,13 @@ export default function CharacterChat() {
             {records.map((record, index) => {
               const isUser = record.role === 'user'
               return (
-                <div key={`${record.role}-${index}`} className={`flex items-end gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                <div key={`${record.role}-${index}`} className={`flex gap-2 ${isUser ? 'items-end justify-end' : 'items-start justify-start'}`}>
                   {!isUser && (character.image_url ? (
                     <img src={character.image_url} alt={`${character.name}のアイコン`} className="h-9 w-9 shrink-0 rounded-2xl object-cover shadow-md" />
                   ) : (
                     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-indigo-500 text-sm font-bold text-white shadow-md">{characterInitial}</div>
                   ))}
-                  <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-6 shadow-sm ${isUser ? 'rounded-br-lg bg-indigo-600 text-white' : 'rounded-bl-lg bg-white/95 text-slate-700 backdrop-blur'}`}>
+                  <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-6 shadow-sm backdrop-blur-md ${isUser ? 'rounded-br-lg bg-indigo-600/75 text-white' : 'rounded-bl-lg bg-white/65 text-slate-800'}`}>
                     {record.message}
                   </div>
                 </div>
@@ -217,7 +217,7 @@ export default function CharacterChat() {
             {loading && (
               <div className="flex items-end gap-2">
                 {character.image_url ? <img src={character.image_url} alt="" className="h-9 w-9 rounded-2xl object-cover shadow-md" /> : <div className="grid h-9 w-9 place-items-center rounded-2xl bg-indigo-500 text-sm font-bold text-white">{characterInitial}</div>}
-                <div className="rounded-3xl rounded-bl-lg bg-white/95 px-4 py-3 text-sm text-slate-500 shadow-sm backdrop-blur">{character.name}が入力中<span className="animate-pulse">...</span></div>
+                <div className="rounded-3xl rounded-bl-lg bg-white/65 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-md">{character.name}が入力中<span className="animate-pulse">...</span></div>
               </div>
             )}
             <div />
@@ -231,7 +231,7 @@ export default function CharacterChat() {
             onChange={(e) => setInput(e.target.value)}
             placeholder={`${character.name}にメッセージ…`}
             disabled={loading}
-            className="min-w-0 flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-300 disabled:opacity-60"
+            className="min-w-0 flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-base text-slate-800 outline-none transition placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-300 disabled:opacity-60 sm:text-sm"
           />
           <button
             type="submit"
@@ -247,4 +247,3 @@ export default function CharacterChat() {
     </main>
   )
 }
-
