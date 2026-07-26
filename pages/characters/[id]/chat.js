@@ -175,6 +175,15 @@ export default function CharacterChat() {
           className="relative min-h-0 flex-1 overflow-hidden bg-slate-100"
           aria-label={`${character.name}との会話`}
         >
+          {latestImage && (
+            <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center bg-slate-100">
+              <img
+                src={latestImage}
+                alt="この会話から生成された最新のシーン"
+                className="h-full w-full object-contain"
+              />
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setShowMessages((visible) => !visible)}
@@ -205,18 +214,6 @@ export default function CharacterChat() {
                 </div>
               )
             })}
-            {latestImage && (
-              <figure className="mt-2 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                <img
-                  src={latestImage}
-                  alt="この会話から生成された最新のシーン"
-                  className="block max-h-[560px] w-full object-contain bg-slate-100"
-                />
-                <figcaption className="px-4 py-2 text-center text-xs text-slate-500">
-                  ✨ この会話から生成された最新のシーン
-                </figcaption>
-              </figure>
-            )}
             {loading && (
               <div className="flex items-end gap-2">
                 {character.image_url ? <img src={character.image_url} alt="" className="h-9 w-9 rounded-2xl object-cover shadow-md" /> : <div className="grid h-9 w-9 place-items-center rounded-2xl bg-indigo-500 text-sm font-bold text-white">{characterInitial}</div>}
@@ -250,3 +247,4 @@ export default function CharacterChat() {
     </main>
   )
 }
+
