@@ -34,7 +34,7 @@ export default function CharacterChat() {
       top: messageScrollRef.current.scrollHeight,
       behavior: 'smooth',
     })
-  }, [records, loading])
+  }, [records, loading, latestImage])
 
   useEffect(() => {
     const closeMenu = (event) => {
@@ -78,7 +78,7 @@ export default function CharacterChat() {
         .then(data => data.prompt && fetch('/api/generate-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: data.prompt }),
+          body: JSON.stringify({ prompt: data.prompt, characterId: id }),
         }))
         .then(res => res?.json())
         .then(async imageData => {
@@ -175,14 +175,6 @@ export default function CharacterChat() {
           className="relative min-h-0 flex-1 overflow-hidden bg-slate-100"
           aria-label={`${character.name}との会話`}
         >
-          {latestImage && (
-            <img
-              src={latestImage}
-              alt="生成された会話シーン"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-          )}
-          {latestImage && <div className="absolute inset-0 bg-slate-950/10" />}
           <button
             type="button"
             onClick={() => setShowMessages((visible) => !visible)}
@@ -192,11 +184,6 @@ export default function CharacterChat() {
           </button>
           {showMessages && <div ref={messageScrollRef} className="absolute inset-0 z-10 overflow-y-auto px-4 pb-5 pt-16 sm:px-6">
           <div className="mx-auto flex max-w-xl flex-col gap-4">
-            {latestImage && (
-              <p className="self-center rounded-full bg-slate-950/55 px-3 py-1 text-xs font-medium text-white shadow-sm backdrop-blur">
-                ✨ いま、このシーンで会話中
-              </p>
-            )}
             {!records.length && !loading && (
               <div className="mt-16 rounded-3xl bg-white/85 p-6 text-center text-sm leading-6 text-slate-600 shadow-sm backdrop-blur">
                 <p className="mb-1 text-lg">💬 会話をはじめよう</p>
@@ -218,6 +205,18 @@ export default function CharacterChat() {
                 </div>
               )
             })}
+            {latestImage && (
+              <figure className="mt-2 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <img
+                  src={latestImage}
+                  alt="この会話から生成された最新のシーン"
+                  className="block max-h-[560px] w-full object-contain bg-slate-100"
+                />
+                <figcaption className="px-4 py-2 text-center text-xs text-slate-500">
+                  ✨ この会話から生成された最新のシーン
+                </figcaption>
+              </figure>
+            )}
             {loading && (
               <div className="flex items-end gap-2">
                 {character.image_url ? <img src={character.image_url} alt="" className="h-9 w-9 rounded-2xl object-cover shadow-md" /> : <div className="grid h-9 w-9 place-items-center rounded-2xl bg-indigo-500 text-sm font-bold text-white">{characterInitial}</div>}
