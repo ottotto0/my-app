@@ -5,10 +5,10 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const { prompt } = req.body;
+    const { prompt, characterId } = req.body;
 
-    if (!prompt) {
-        return res.status(400).json({ error: 'No prompt provided' });
+    if (!prompt || !characterId) {
+        return res.status(400).json({ error: 'Prompt and character ID are required' });
     }
 
     try {
@@ -88,8 +88,38 @@ export default async function handler(req, res) {
             throw new Error('No image URL returned from Gradio API');
         }
 
-        console.log(`✅ Image generated: ${imageUrl}`);
-        res.status(200).json({ image_url: imageUrl });
+        // 生成元の URL は期限切れになるため、画像本体を Supabase Storage に保存する。
+        const imageResponse = await fetch(imageUrl);
+        if (!imageResponse.ok) {
+            throw new Error(`Failed to download generated image: ${imageResponse.status}`);
+        }
+
+        const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+        const contentType = imageResponse.headers.get('content-type') || 'image/png';
+        const filePath = `characters/${characterId}/latest.png`;
+
+        // キャラごとに固定パスを使うため、常に最新の 1 枚だけが Storage に残る。
+        const { error: uploadError } = await supabase.storage
+            .from('chat-images')
+            .upload(filePath, imageBuffer, {
+                contentType,
+                upsert: true,
+                cacheControl: '0',
+            });
+
+        if (uploadError) {
+            throw new Error(`Failed to save generated image: ${uploadError.message}`);
+        }
+
+        const { data: publicUrlData } = supabase.storage
+            .from('chat-images')
+            .getPublicUrl(filePath);
+
+        // 固定ファイル名のままでも、表示 URL を毎回変えてブラウザキャッシュを回避する。
+        const savedImageUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+
+        console.log(`✅ Image saved to Supabase Storage: ${filePath}`);
+        res.status(200).json({ image_url: savedImageUrl });
 
     } catch (error) {
         console.error('🔴 Image Generation Error:', error);
