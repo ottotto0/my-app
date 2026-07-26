@@ -65,8 +65,8 @@ export default async function handler(req, res) {
             "blurry, low quality, watermark, monochrome, text", // negative_prompt
             0,                  // seed
             true,               // randomize_seed
-            900,               // width
-            1200,               // height
+            832,               // width
+            1216,               // height
             6,                  // guidance_scale
             30,                 // num_inference_steps
             1,                  // num_images
