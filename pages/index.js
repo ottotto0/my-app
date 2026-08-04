@@ -18,6 +18,11 @@ export default function Home() {
               キャラ一覧ページへ
             </Link>
           </li>
+          <li>
+            <Link href="/setting/setting" className="block w-full py-3 px-6 bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded-lg shadow-md transition duration-300 ease-in-out transform hover:-translate-y-1">
+              設定
+            </Link>
+          </li>
         </ul>
       </div>
     </div>
