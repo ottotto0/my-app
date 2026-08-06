@@ -27,22 +27,34 @@ export default function CharacterDetail() {
     if (!confirm('本当にこのキャラを削除しますか？')) return
 
     try {
-      // 1️⃣ 画像削除処理
+      // 1️⃣ アイコン画像削除処理
       if (character?.image_url) {
         const oldPath = character.image_url.split('/character-icons/')[1]
         if (oldPath) {
-          console.log('🟡 画像削除パス:', oldPath)
+          console.log('🟡 アイコン画像削除パス:', oldPath)
           const { error: removeError } = await supabase.storage
             .from('character-icons')
             .remove([oldPath])
-          if (removeError) console.error('🔴 画像削除エラー:', removeError)
-          else console.log('🟢 画像削除完了')
+          if (removeError) console.error('🔴 アイコン画像削除エラー:', removeError)
+          else console.log('🟢 アイコン画像削除完了')
         } else {
-          console.log('⚠️ 画像パスが解析できませんでした:', character.image_url)
+          console.log('⚠️ アイコン画像パスが解析できませんでした:', character.image_url)
         }
       }
 
-      // 2️⃣ キャラデータ削除
+      // 2️⃣ チャット生成画像削除処理
+      const chatImagePath = `characters/${id}/latest.png`
+      console.log('🟡 チャット画像削除パス:', chatImagePath)
+      const { error: removeChatImageError } = await supabase.storage
+        .from('chat-images')
+        .remove([chatImagePath])
+      if (removeChatImageError) {
+        console.error('🔴 チャット画像削除エラー:', removeChatImageError)
+      } else {
+        console.log('🟢 チャット画像削除完了')
+      }
+
+      // 3️⃣ キャラデータ削除
       const { error: deleteError } = await supabase
         .from('characters')
         .delete()
