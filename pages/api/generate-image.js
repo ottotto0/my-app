@@ -31,7 +31,7 @@ export default async function handler(req, res) {
 
         let client;
 
-        console.log(`Initializing Gradio Client for Nech-C/waiNSFWIllustrious_v140...`);
+        console.log(`Initializing Gradio Client for Menyu/wainsfw...`);
 
         if (tokens && tokens.length > 0) {
             const n = tokens.length;
@@ -49,30 +49,26 @@ export default async function handler(req, res) {
             ]).catch(err => console.error("Error updating token status:", err));
 
             // Try passing token in both hf_token and headers to be safe
-            client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
+            client = await Client.connect("Menyu/wainsfw", {
                 hf_token: hfToken,
                 headers: { "Authorization": `Bearer ${hfToken}` }
             });
         } else {
             console.log("No active tokens found in Supabase, using anonymous access.");
-            client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
+            client = await Client.connect("Menyu/wainsfw");
         }
 
+        // Menyu/wainsfw の /infer API は 9 引数。前モデルの model / quality / history 引数は使わない。
         const result = await client.predict("/infer", [
-            "v160",             // model
-            prompt,             // prompt
-            "masterpiece, best quality, fine details", // quality_prompt
-            "blurry, low quality, watermark, monochrome, text", // negative_prompt
-            0,                  // seed
-            true,               // randomize_seed
-            832,               // width
-            1216,               // height
-            6,                  // guidance_scale
-            30,                 // num_inference_steps
-            1,                  // num_images
-            [],                 // history
-            true,               // use_quality
-            0,                  // language_warning_count
+            prompt,
+            "blurry, low quality, watermark, monochrome, text",
+            true,
+            0,
+            832,
+            1216,
+            7.0,
+            28,
+            true,
         ]);
 
         // result.data is an array of outputs. The first output is the image.
