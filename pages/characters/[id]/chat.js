@@ -51,6 +51,7 @@ export default function CharacterChat() {
 
     const userMessage = { role: 'user', message }
     const newRecords = [...records, userMessage]
+    const streamingRecords = [...newRecords, { role: 'assistant', message: '' }]
     setRecords(newRecords)
     setInput('')
     setLoading(true)
@@ -61,9 +62,36 @@ export default function CharacterChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ character, userMessage: message, records: newRecords }),
       })
-      const data = await res.json()
-      const reply = data.reply || '（返答が取得できませんでした）'
-      const updatedRecords = [...newRecords, { role: 'assistant', message: reply }]
+      if (!res.ok || !res.body) throw new Error('Gemma呼び出しエラー')
+
+      setRecords(streamingRecords)
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let reply = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const events = buffer.split('\n\n')
+        buffer = events.pop() || ''
+
+        for (const event of events) {
+          const eventType = event.match(/^event: (.+)$/m)?.[1]
+          const dataLine = event.match(/^data: (.+)$/m)?.[1]
+          if (!dataLine) continue
+          const data = JSON.parse(dataLine)
+          if (eventType === 'error') throw new Error(data.error)
+          if (!data.delta) continue
+
+          reply += data.delta
+          setRecords([...newRecords, { role: 'assistant', message: reply }])
+        }
+      }
+
+      const updatedRecords = [...newRecords, { role: 'assistant', message: reply || '（返答が取得できませんでした）' }]
       setRecords(updatedRecords)
 
       await supabase.from('characters').update({ records: JSON.stringify(updatedRecords) }).eq('id', id)
