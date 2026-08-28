@@ -69,8 +69,9 @@ export default function CharacterChat() {
       const decoder = new TextDecoder()
       let buffer = ''
       let reply = ''
+      let streamComplete = false
 
-      while (true) {
+      while (!streamComplete) {
         const { value, done } = await reader.read()
         if (done) break
 
@@ -84,6 +85,10 @@ export default function CharacterChat() {
           if (!dataLine) continue
           const data = JSON.parse(dataLine)
           if (eventType === 'error') throw new Error(data.error)
+          if (eventType === 'done') {
+            streamComplete = true
+            break
+          }
           if (!data.delta) continue
 
           reply += data.delta
@@ -93,11 +98,15 @@ export default function CharacterChat() {
 
       const updatedRecords = [...newRecords, { role: 'assistant', message: reply || '（返答が取得できませんでした）' }]
       setRecords(updatedRecords)
+      // 文章の生成が終わった時点で次の入力を受け付ける。保存や画像生成は
+      // バックグラウンドで続けるため、これらの通信待ちでUIを止めない。
+      setLoading(false)
 
-      await supabase.from('characters').update({ records: JSON.stringify(updatedRecords) }).eq('id', id)
+      supabase.from('characters').update({ records: JSON.stringify(updatedRecords) }).eq('id', id)
+        .then(({ error }) => error && console.error('Conversation save error:', error))
 
       // 画像は会話画面の背景として更新するので、文章のやり取りを止めずに生成する。
-      fetch('/api/generate-image-prompt', {
+      void fetch('/api/generate-image-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ character, records: updatedRecords }),
