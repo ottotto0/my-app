@@ -5,6 +5,12 @@ import { supabase } from '../../lib/supabaseClient'
 const modes = { add: '条件付き制限カテゴリー追加', remove: '条件付き制限カテゴリー削除', list: '条件付き制限カテゴリー一覧' }
 const emptySelection = { tag1_category: '', tag1: '', tag2_category: '', tag2: '', restricted_category: '' }
 const columns = ['tag1_category', 'tag1', 'tag2_category', 'tag2', 'restricted_category']
+const pair = (value, index) => ({ category: value[`tag${index}_category`], tag: value[`tag${index}`] })
+const pairKey = (value) => `${value.category}\u0000${value.tag}`
+const samePair = (left, right) => left.category === right.category && left.tag === right.tag
+const hasPairs = (value) => Boolean(value.tag1_category && value.tag1 && value.tag2_category && value.tag2)
+const pairsMatchRegardlessOfOrder = (left, right) => hasPairs(left) && hasPairs(right) && ((samePair(pair(left, 1), pair(right, 1)) && samePair(pair(left, 2), pair(right, 2))) || (samePair(pair(left, 1), pair(right, 2)) && samePair(pair(left, 2), pair(right, 1))))
+const canonicalize = (value) => pairKey(pair(value, 1)).localeCompare(pairKey(pair(value, 2))) <= 0 ? value : { ...value, tag1_category: value.tag2_category, tag1: value.tag2, tag2_category: value.tag1_category, tag2: value.tag1 }
 
 export default function RestrictedCategoryPage() {
   const [mode, setMode] = useState('add')
@@ -55,19 +61,19 @@ export default function RestrictedCategoryPage() {
     }))
   }
   const isComplete = (value) => columns.every((column) => value[column])
-  const isDuplicate = restrictedRows.some((row) => columns.every((column) => row[column] === selection[column]))
+  const isDuplicate = restrictedRows.some((row) => row.restricted_category === selection.restricted_category && pairsMatchRegardlessOfOrder(row, selection))
 
   const addRestrictedCategory = async () => {
     if (!isComplete(selection) || isDuplicate) {
       setDialog({ type: 'invalid', message: '条件付き制限カテゴリー追加は無効です。' })
       return
     }
-    const { error } = await supabase.from('image_restricted_categories').insert(selection)
+    const { error } = await supabase.from('image_restricted_categories').insert(canonicalize(selection))
     if (error) {
       setDialog({ type: 'error', message: `条件付き制限カテゴリーの追加に失敗しました。${error.message}` })
       return
     }
-    setSelection(emptySelection)
+    setSelection((current) => ({ ...current, restricted_category: '' }))
     await loadData()
     setDialog({ type: 'success', message: '条件付き制限カテゴリーを追加しました。' })
   }
@@ -77,15 +83,17 @@ export default function RestrictedCategoryPage() {
       setDialog({ type: 'invalid', message: '条件付き制限カテゴリー削除は無効です。' })
       return
     }
-    const { error } = await supabase.from('image_restricted_categories').delete()
-      .eq('tag1_category', selection.tag1_category).eq('tag1', selection.tag1)
-      .eq('tag2_category', selection.tag2_category).eq('tag2', selection.tag2)
-      .eq('restricted_category', selection.restricted_category)
+    const matchedRows = restrictedRows.filter((row) => row.restricted_category === selection.restricted_category && pairsMatchRegardlessOfOrder(row, selection))
+    const results = await Promise.all(matchedRows.map((row) => supabase.from('image_restricted_categories').delete()
+      .eq('tag1_category', row.tag1_category).eq('tag1', row.tag1)
+      .eq('tag2_category', row.tag2_category).eq('tag2', row.tag2)
+      .eq('restricted_category', row.restricted_category)))
+    const error = results.find((result) => result.error)?.error
     if (error) {
       setDialog({ type: 'error', message: `条件付き制限カテゴリーの削除に失敗しました。${error.message}` })
       return
     }
-    setSelection(emptySelection)
+    setSelection((current) => ({ ...current, restricted_category: '' }))
     await loadData()
     setDialog({ type: 'success', message: '条件付き制限カテゴリーを削除しました。' })
   }
@@ -98,8 +106,12 @@ export default function RestrictedCategoryPage() {
 
   const categoryOptions = categories.map(({ category }) => <option key={category} value={category}>{category}</option>)
   const tagsFor = (category) => tags.filter((item) => item.category === category)
-  const restrictedOptions = restrictedRows.filter((row) => row.tag1_category === selection.tag1_category && row.tag1 === selection.tag1 && row.tag2_category === selection.tag2_category && row.tag2 === selection.tag2)
-  const shownRows = restrictedRows.filter((row) => columns.every((column) => !filter[column] || row[column] === filter[column]))
+  const restrictedOptions = restrictedRows.filter((row) => pairsMatchRegardlessOfOrder(row, selection))
+  const pairMatchesFilter = (rowPair, filterPair) => (!filterPair.category || rowPair.category === filterPair.category) && (!filterPair.tag || rowPair.tag === filterPair.tag)
+  const shownRows = restrictedRows.filter((row) => {
+    const pairsMatch = (pairMatchesFilter(pair(row, 1), pair(filter, 1)) && pairMatchesFilter(pair(row, 2), pair(filter, 2))) || (pairMatchesFilter(pair(row, 1), pair(filter, 2)) && pairMatchesFilter(pair(row, 2), pair(filter, 1)))
+    return pairsMatch && (!filter.restricted_category || row.restricted_category === filter.restricted_category)
+  })
 
   return <main className="min-h-screen bg-gradient-to-br from-slate-100 to-rose-100 p-4 sm:p-6"><section className="mx-auto max-w-5xl rounded-2xl bg-white p-6 shadow-xl sm:p-8">
     <Link href="/setting/img-gen-setting" className="inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-800">← 画像生成の設定に戻る</Link>
