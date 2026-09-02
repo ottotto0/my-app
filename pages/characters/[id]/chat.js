@@ -89,6 +89,28 @@ export default function CharacterChat() {
             streamComplete = true
             break
           }
+          if (eventType === 'image_prompt') {
+            // サーバー側で last_image_prompt を保存した後に届くイベント。
+            // 本文のストリーム完了を待たず、別トークンで画像生成を開始する。
+            setCharacter((current) => current ? { ...current, last_image_prompt: data.prompt } : current)
+            void fetch('/api/generate-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt: data.prompt, characterId: id }),
+            })
+              .then(res => res.json())
+              .then(async imageData => {
+                if (!imageData?.image_url) return
+                setLatestImage(imageData.image_url)
+                const { error } = await supabase
+                  .from('characters')
+                  .update({ image_latest_chat_url: imageData.image_url })
+                  .eq('id', id)
+                if (error) console.error('Latest image save error:', error)
+              })
+              .catch(err => console.error('Image generation error:', err))
+            continue
+          }
           if (!data.delta) continue
 
           reply += data.delta
@@ -105,28 +127,6 @@ export default function CharacterChat() {
       supabase.from('characters').update({ records: JSON.stringify(updatedRecords) }).eq('id', id)
         .then(({ error }) => error && console.error('Conversation save error:', error))
 
-      // 画像は会話画面の背景として更新するので、文章のやり取りを止めずに生成する。
-      void fetch('/api/generate-image-prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ character, records: updatedRecords }),
-      })
-        .then(res => res.json())
-        .then(data => data.prompt && fetch('/api/generate-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: data.prompt, characterId: id }),
-        }))
-        .then(res => res?.json())
-        .then(async imageData => {
-          if (!imageData?.image_url) return
-          setLatestImage(imageData.image_url)
-          await supabase
-            .from('characters')
-            .update({ image_latest_chat_url: imageData.image_url })
-            .eq('id', id)
-        })
-        .catch(err => console.error('Image generation error:', err))
     } catch (err) {
       console.error(err)
       alert('通信エラーが発生しました')
@@ -140,10 +140,11 @@ export default function CharacterChat() {
     setClearing(true)
     await supabase
       .from('characters')
-      .update({ records: JSON.stringify([]), image_latest_chat_url: null })
+      .update({ records: JSON.stringify([]), image_latest_chat_url: null, last_image_prompt: null })
       .eq('id', id)
     setRecords([])
     setLatestImage(null)
+    setCharacter((current) => current ? { ...current, last_image_prompt: null } : current)
     setClearing(false)
     setMenuOpen(false)
   }
