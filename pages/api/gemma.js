@@ -7,9 +7,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 )
 
-const IMAGE_PROMPT_START = '[IMAGE_PROMPT]'
-const IMAGE_PROMPT_END = '[/IMAGE_PROMPT]'
-const CHAT_MESSAGE_START = '[CHAT_MESSAGE]'
+// ␞ / ␟ は通常のチャット本文には使われない制御文字の可視表記。モデルには
+// そのまま出力させ、プロンプトと本文を衝突なく分離する。
+const IMAGE_PROMPT_END = '␞␞␞IMAGE_PROMPT_END_8F3C␞␞␞'
+const CHAT_MESSAGE_START = '␟␟␟CHAT_MESSAGE_BEGIN_8F3C␟␟␟'
 
 function writeEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
@@ -39,12 +40,11 @@ export default async function handler(req, res) {
       output += delta
 
       if (!imagePromptSaved) {
-        const start = output.indexOf(IMAGE_PROMPT_START)
         const end = output.indexOf(IMAGE_PROMPT_END)
-        if (start === -1 || end === -1 || end < start) continue
+        if (end === -1) continue
 
         const imagePrompt = output
-          .slice(start + IMAGE_PROMPT_START.length, end)
+          .slice(0, end)
           .trim()
         if (!imagePrompt) throw new Error('画像生成プロンプトが空です')
 
