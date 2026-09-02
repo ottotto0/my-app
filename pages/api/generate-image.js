@@ -42,11 +42,16 @@ export default async function handler(req, res) {
 
             console.log(`Using token ${selected.name || selected.id} for authentication. Token length: ${hfToken ? hfToken.length : 0}`);
 
-            // Update database state asynchronously
-            Promise.all([
+            // チャット生成で選んだトークンとは別のものを確定させてから画像を
+            // 生成する。画像完了後の次回取得では、この次のトークンが選ばれる。
+            await Promise.all([
                 supabase.from('hf_tokens').update({ is_last_used: false }).neq('id', selected.id),
                 supabase.from('hf_tokens').update({ is_last_used: true }).eq('id', selected.id)
-            ]).catch(err => console.error("Error updating token status:", err));
+            ]).then(results => {
+                results.forEach(({ error }) => {
+                    if (error) console.error("Error updating token status:", error);
+                });
+            });
 
             // Try passing token in both hf_token and headers to be safe
             client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
