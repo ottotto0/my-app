@@ -49,7 +49,7 @@ export default function CreateCharacter() {
     // charactersテーブルにデータ挿入
     const { data: insertData, error: insertError } = await supabase
       .from('characters')
-      .insert([{ name, age, description, appearance, image_url }])
+      .insert([{ name, age, description, appearance, image_url, last_image_prompt: null }])
       .select()
 
     if (insertError) {
