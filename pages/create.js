@@ -1,18 +1,85 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useRouter } from 'next/router'
+import { AppearanceSelector, Dialog, categoryToColumnName } from '../components/AppearanceSelector'
 
 export default function CreateCharacter() {
   const [name, setName] = useState('')
   const [age, setAge] = useState('')
   const [description, setDescription] = useState('')
-  const [appearance, setAppearance] = useState('')
   const [imageFile, setImageFile] = useState(null)
+  const [categories, setCategories] = useState([])
+  const [tagsByCategory, setTagsByCategory] = useState({})
+  const [appearanceValues, setAppearanceValues] = useState({})
+  const [loadingAppearance, setLoadingAppearance] = useState(true)
+  const [dialog, setDialog] = useState(null)
   const router = useRouter()
+
+  useEffect(() => {
+    const fetchAppearanceData = async () => {
+      setLoadingAppearance(true)
+      const [categoriesResult, tagsResult] = await Promise.all([
+        supabase
+          .from('image_prompt_categories')
+          .select('category, character_appearance')
+          .order('category'),
+        supabase
+          .from('image_prompt_tags')
+          .select('category, tag')
+          .order('category')
+          .order('tag'),
+      ])
+
+      if (categoriesResult.error || tagsResult.error) {
+        console.error('カテゴリーまたはタグの取得に失敗しました:', categoriesResult.error || tagsResult.error)
+      } else {
+        const activeCategories = (categoriesResult.data || [])
+          .filter((item) => item.character_appearance === 'on')
+          .map((item) => item.category)
+        setCategories(activeCategories)
+
+        const tagMap = {}
+        for (const item of tagsResult.data || []) {
+          if (!tagMap[item.category]) tagMap[item.category] = []
+          tagMap[item.category].push(item.tag)
+        }
+        setTagsByCategory(tagMap)
+
+        const initialValues = {}
+        for (const cat of activeCategories) {
+          initialValues[cat] = { enabled: false, tag: '' }
+        }
+        setAppearanceValues(initialValues)
+      }
+      setLoadingAppearance(false)
+    }
+
+    fetchAppearanceData()
+  }, [])
+
+  const handleAppearanceChange = (category, { enabled, tag }) => {
+    setAppearanceValues((prev) => ({
+      ...prev,
+      [category]: { enabled, tag },
+    }))
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     console.log('🟢 フォーム送信開始')
+
+    // スイッチがONなのに未選択のカテゴリーをチェック
+    const missingCategories = categories.filter((cat) => {
+      const val = appearanceValues[cat]
+      return val?.enabled && (!val?.tag || val.tag.trim() === '')
+    })
+
+    if (missingCategories.length > 0) {
+      setDialog({
+        message: `スイッチがONになっている以下のカテゴリーで、タグが選択されていません：\n\n${missingCategories.map((c) => `・${c}`).join('\n')}\n\nタグを選択するか、スイッチをOFFにしてください。`,
+      })
+      return
+    }
 
     let image_url = null
 
@@ -46,14 +113,35 @@ export default function CreateCharacter() {
       console.log('⚪ 画像ファイルが選択されていません')
     }
 
+    // 外見特徴の動的カラムを作成
+    const dynamicAppearance = {}
+    for (const cat of categories) {
+      const colName = categoryToColumnName(cat)
+      const val = appearanceValues[cat]
+      dynamicAppearance[colName] = val?.enabled && val?.tag ? val.tag : null
+    }
+
     // charactersテーブルにデータ挿入
     const { data: insertData, error: insertError } = await supabase
       .from('characters')
-      .insert([{ name, age, description, appearance, image_url, last_image_prompt: null }])
+      .insert([
+        {
+          name,
+          age,
+          description,
+          appearance: null,
+          image_url,
+          last_image_prompt: null,
+          ...dynamicAppearance,
+        },
+      ])
       .select()
 
     if (insertError) {
       console.error('🔴 挿入エラー:', insertError)
+      setDialog({
+        message: `キャラクターの保存に失敗しました。${insertError.message || ''}`,
+      })
     } else {
       console.log('🟢 挿入成功:', insertData)
       router.push('/characters')
@@ -98,14 +186,12 @@ export default function CreateCharacter() {
             />
           </div>
           <div>
-            <label htmlFor="appearance" className="block text-sm font-medium text-gray-700">外見の特徴</label>
-            <textarea
-              id="appearance"
-              placeholder="外見の特徴を入力（例：青い目、長い髪、背が高い）"
-              value={appearance}
-              onChange={(e) => setAppearance(e.target.value)}
-              rows={3}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            <AppearanceSelector
+              categories={categories}
+              tagsByCategory={tagsByCategory}
+              values={appearanceValues}
+              onChange={handleAppearanceChange}
+              loading={loadingAppearance}
             />
           </div>
           <div>
@@ -158,6 +244,7 @@ export default function CreateCharacter() {
           </div>
         </form>
       </div>
+      {dialog && <Dialog dialog={dialog} onClose={() => setDialog(null)} />}
     </div>
   )
 }
