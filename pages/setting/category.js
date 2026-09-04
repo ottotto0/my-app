@@ -32,8 +32,8 @@ export default function CategoryPage() {
       setDialog({ type: 'invalid', message: 'カテゴリー追加は無効です。' })
       return
     }
-    // カテゴリー行の追加と characters テーブルの列追加は、DB 側で一つの
-    // トランザクションとして行う（supabase/migrations の RPC を参照）。
+    // カテゴリー行の追加と characters テーブルの列追加（複数単語の場合はスペースを _ に置換した列名）は、
+    // DB 側で一つのトランザクションとして行う（supabase/migrations の RPC を参照）。
     const { error } = await supabase.rpc('add_image_prompt_category', {
       p_category: category,
       p_character_appearance: characterAppearance,
@@ -42,7 +42,7 @@ export default function CategoryPage() {
     else { setNewCategory(''); setCharacterAppearance(false); await loadCategories() }
   }
   const confirmDelete = async () => {
-    // カテゴリー行と、同名なら characters の列も DB 側でまとめて削除する。
+    // カテゴリー行と、characters テーブルの対応列（複数単語の場合はスペースを _ に置換した列名）を DB 側でまとめて削除する。
     const { error } = await supabase.rpc('delete_image_prompt_category', { p_category: selected })
     if (error) { setDialog({ type: 'error', message: 'カテゴリーの削除に失敗しました。' }); return }
     window.location.reload()
