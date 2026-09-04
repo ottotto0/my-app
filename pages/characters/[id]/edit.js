@@ -1,6 +1,7 @@
 import { useRouter } from 'next/router'
 import { supabase } from '../../../lib/supabaseClient'
 import { useEffect, useState } from 'react'
+import { AppearanceSelector, Dialog, categoryToColumnName } from '../../../components/AppearanceSelector'
 
 export default function EditCharacter() {
   const router = useRouter()
@@ -8,35 +9,93 @@ export default function EditCharacter() {
   const [name, setName] = useState('')
   const [age, setAge] = useState('')
   const [description, setDescription] = useState('')
-  const [appearance, setAppearance] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [imageUrl, setImageUrl] = useState(null)
+  const [categories, setCategories] = useState([])
+  const [tagsByCategory, setTagsByCategory] = useState({})
+  const [appearanceValues, setAppearanceValues] = useState({})
+  const [loadingAppearance, setLoadingAppearance] = useState(true)
+  const [dialog, setDialog] = useState(null)
 
   useEffect(() => {
     if (!id) return
     const load = async () => {
-      console.log('🟢 キャラ情報を取得中...', id)
-      const { data, error } = await supabase
-        .from('characters')
-        .select('*')
-        .eq('id', id)
-        .single()
-      if (error) console.error('🔴 キャラ情報取得エラー:', error)
-      if (data) {
-        console.log('🟢 キャラ情報:', data)
-        setName(data.name)
-        setAge(data.age)
-        setDescription(data.description)
-        setAppearance(data.appearance || '')
-        setImageUrl(data.image_url)
+      console.log('🟢 キャラ情報および外見設定を取得中...', id)
+      setLoadingAppearance(true)
+
+      const [charResult, catResult, tagResult] = await Promise.all([
+        supabase.from('characters').select('*').eq('id', id).single(),
+        supabase.from('image_prompt_categories').select('category, character_appearance').order('category'),
+        supabase.from('image_prompt_tags').select('category, tag').order('category').order('tag'),
+      ])
+
+      if (charResult.error) console.error('🔴 キャラ情報取得エラー:', charResult.error)
+      if (catResult.error || tagResult.error) {
+        console.error('🔴 カテゴリーまたはタグ取得エラー:', catResult.error || tagResult.error)
       }
+
+      const charData = charResult.data
+      if (charData) {
+        console.log('🟢 キャラ情報:', charData)
+        setName(charData.name || '')
+        setAge(charData.age || '')
+        setDescription(charData.description || '')
+        setImageUrl(charData.image_url)
+      }
+
+      const activeCategories = (catResult.data || [])
+        .filter((item) => item.character_appearance === 'on')
+        .map((item) => item.category)
+      setCategories(activeCategories)
+
+      const tagMap = {}
+      for (const item of tagResult.data || []) {
+        if (!tagMap[item.category]) tagMap[item.category] = []
+        tagMap[item.category].push(item.tag)
+      }
+      setTagsByCategory(tagMap)
+
+      // 各カテゴリーの初期値を characters テーブルのカラムから復元
+      const initialValues = {}
+      for (const cat of activeCategories) {
+        const colName = categoryToColumnName(cat)
+        const savedVal = charData ? charData[colName] : null
+        if (savedVal && typeof savedVal === 'string' && savedVal.trim() !== '') {
+          initialValues[cat] = { enabled: true, tag: savedVal }
+        } else {
+          initialValues[cat] = { enabled: false, tag: '' }
+        }
+      }
+      setAppearanceValues(initialValues)
+      setLoadingAppearance(false)
     }
+
     load()
   }, [id])
+
+  const handleAppearanceChange = (category, { enabled, tag }) => {
+    setAppearanceValues((prev) => ({
+      ...prev,
+      [category]: { enabled, tag },
+    }))
+  }
 
   const handleUpdate = async (e) => {
     e.preventDefault()
     console.log('🟢 更新処理開始')
+
+    // スイッチがONなのに未選択のカテゴリーをチェック
+    const missingCategories = categories.filter((cat) => {
+      const val = appearanceValues[cat]
+      return val?.enabled && (!val?.tag || val.tag.trim() === '')
+    })
+
+    if (missingCategories.length > 0) {
+      setDialog({
+        message: `スイッチがONになっている以下のカテゴリーで、タグが選択されていません：\n\n${missingCategories.map((c) => `・${c}`).join('\n')}\n\nタグを選択するか、スイッチをOFFにしてください。`,
+      })
+      return
+    }
 
     let image_url = imageUrl
 
@@ -80,14 +139,32 @@ export default function EditCharacter() {
       }
     }
 
+    // 外見特徴の動的カラムを作成
+    const dynamicAppearance = {}
+    for (const cat of categories) {
+      const colName = categoryToColumnName(cat)
+      const val = appearanceValues[cat]
+      dynamicAppearance[colName] = val?.enabled && val?.tag ? val.tag : null
+    }
+
     // DB更新
     const { error: updateError } = await supabase
       .from('characters')
-      .update({ name, age, description, appearance, image_url })
+      .update({
+        name,
+        age,
+        description,
+        appearance: null,
+        image_url,
+        ...dynamicAppearance,
+      })
       .eq('id', id)
 
     if (updateError) {
       console.error('🔴 更新エラー:', updateError)
+      setDialog({
+        message: `キャラ情報の更新に失敗しました。${updateError.message || ''}`,
+      })
     } else {
       console.log('🟢 キャラ情報を更新しました')
       router.push(`/characters/${id}`)
@@ -143,14 +220,12 @@ export default function EditCharacter() {
             />
           </div>
           <div>
-            <label htmlFor="appearance" className="block text-sm font-medium text-gray-700">外見の特徴</label>
-            <textarea
-              id="appearance"
-              value={appearance}
-              onChange={(e) => setAppearance(e.target.value)}
-              placeholder="外見の特徴"
-              rows={3}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            <AppearanceSelector
+              categories={categories}
+              tagsByCategory={tagsByCategory}
+              values={appearanceValues}
+              onChange={handleAppearanceChange}
+              loading={loadingAppearance}
             />
           </div>
           <div>
@@ -203,6 +278,7 @@ export default function EditCharacter() {
           </div>
         </form>
       </div>
+      {dialog && <Dialog dialog={dialog} onClose={() => setDialog(null)} />}
     </div>
   )
 }
