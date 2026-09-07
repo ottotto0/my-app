@@ -10,6 +10,8 @@ const supabase = createClient(
 // ␞ / ␟ は通常のチャット本文には使われない制御文字の可視表記。モデルには
 // そのまま出力させ、プロンプトと本文を衝突なく分離する。
 const CLOTHING_WEAR_LEVEL_END = '␞␞␞CLOTHING_WEAR_LEVEL_END_8F3C␞␞␞'
+const USER_CLOTHING_WEAR_LEVEL_BEGIN = '␞␞␞USER_CLOTHING_WEAR_LEVEL_BEGIN_8F3C␞␞␞'
+const USER_CLOTHING_WEAR_LEVEL_END = '␞␞␞USER_CLOTHING_WEAR_LEVEL_END_8F3C␞␞␞'
 const IMAGE_PROMPT_BEGIN = '␞␞␞IMAGE_PROMPT_BEGIN_8F3C␞␞␞'
 const IMAGE_PROMPT_END = '␞␞␞IMAGE_PROMPT_END_8F3C␞␞␞'
 const CHAT_MESSAGE_START = '␟␟␟CHAT_MESSAGE_BEGIN_8F3C␟␟␟'
@@ -58,11 +60,19 @@ export default async function handler(req, res) {
         }
         if (!imagePrompt) throw new Error('画像生成プロンプトが空です')
 
-        // 着衣度判定テキスト（将来のアップデート用。チャットや画像プロンプトには混入させない）
+        // キャラの着衣度判定テキスト（将来のアップデート用。チャットや画像プロンプトには混入させない）
         const wearEnd = output.indexOf(CLOTHING_WEAR_LEVEL_END)
         if (wearEnd !== -1) {
-          const wearLevelText = output.slice(0, wearEnd).trim()
-          console.log('Detected clothing wear levels:', wearLevelText)
+          const charWearLevelText = output.slice(0, wearEnd).trim()
+          console.log('Detected character clothing wear levels:', charWearLevelText)
+        }
+
+        // ユーザーの着衣度判定テキスト（将来のアップデート用。チャットや画像プロンプトには混入させない）
+        const userWearBegin = output.indexOf(USER_CLOTHING_WEAR_LEVEL_BEGIN)
+        const userWearEnd = output.indexOf(USER_CLOTHING_WEAR_LEVEL_END)
+        if (userWearBegin !== -1 && userWearEnd !== -1 && userWearEnd > userWearBegin) {
+          const userWearLevelText = output.slice(userWearBegin + USER_CLOTHING_WEAR_LEVEL_BEGIN.length, userWearEnd).trim()
+          console.log('Detected user clothing wear level:', userWearLevelText)
         }
 
         // 画像プロンプトが確定した時点で永続化する。以降の本文ストリームを
