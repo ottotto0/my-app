@@ -31,7 +31,7 @@ export default async function handler(req, res) {
 
         let client;
 
-        console.log(`Initializing Gradio Client for Nech-C/waiNSFWIllustrious_v140...`);
+        console.log(`Initializing Gradio Client for Menyu/wainsfw...`);
 
         if (tokens && tokens.length > 0) {
             const n = tokens.length;
@@ -54,30 +54,25 @@ export default async function handler(req, res) {
             });
 
             // Try passing token in both hf_token and headers to be safe
-            client = await Client.connect("Nech-C/waiNSFWIllustrious_v140", {
+            client = await Client.connect("Menyu/wainsfw", {
                 hf_token: hfToken,
                 headers: { "Authorization": `Bearer ${hfToken}` }
             });
         } else {
             console.log("No active tokens found in Supabase, using anonymous access.");
-            client = await Client.connect("Nech-C/waiNSFWIllustrious_v140");
+            client = await Client.connect("Menyu/wainsfw");
         }
 
         const result = await client.predict("/infer", [
-            "v160",             // model
             prompt,             // prompt
-            "masterpiece, best quality, fine details", // quality_prompt
-            "blurry, low quality, watermark, monochrome, text", // negative_prompt
+            "lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]", // negative_prompt
+            true,               // use_negative_prompt
             0,                  // seed
-            true,               // randomize_seed
-            832,               // width
+            832,                // width
             1216,               // height
-            6,                  // guidance_scale
-            30,                 // num_inference_steps
-            1,                  // num_images
-            [],                 // history
-            true,               // use_quality
-            0,                  // language_warning_count
+            7,                  // guidance_scale
+            28,                 // num_inference_steps
+            true,               // randomize_seed
         ]);
 
         // result.data is an array of outputs. The first output is the image.
