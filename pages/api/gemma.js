@@ -7,14 +7,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 )
 
-// ␞ / ␟ は通常のチャット本文には使われない制御文字の可視表記。モデルには
-// そのまま出力させ、プロンプトと本文を衝突なく分離する。
-const CLOTHING_WEAR_LEVEL_END = '␞␞␞CLOTHING_WEAR_LEVEL_END_8F3C␞␞␞'
-const USER_CLOTHING_WEAR_LEVEL_BEGIN = '␞␞␞USER_CLOTHING_WEAR_LEVEL_BEGIN_8F3C␞␞␞'
-const USER_CLOTHING_WEAR_LEVEL_END = '␞␞␞USER_CLOTHING_WEAR_LEVEL_END_8F3C␞␞␞'
-const IMAGE_PROMPT_BEGIN = '␞␞␞IMAGE_PROMPT_BEGIN_8F3C␞␞␞'
-const IMAGE_PROMPT_END = '␞␞␞IMAGE_PROMPT_END_8F3C␞␞␞'
-const CHAT_MESSAGE_START = '␟␟␟CHAT_MESSAGE_BEGIN_8F3C␟␟␟'
+// [IMAGE_PROMPT] と [CHAT] の2つのタグのみでセクションを分離
+const IMAGE_PROMPT_TAG = '[IMAGE_PROMPT]'
+const CHAT_TAG = '[CHAT]'
 
 function writeEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
@@ -44,35 +39,38 @@ export default async function handler(req, res) {
       output += delta
 
       if (!imagePromptSaved) {
-        const end = output.indexOf(IMAGE_PROMPT_END)
-        if (end === -1) continue
+        const chatStart = output.indexOf(CHAT_TAG)
+        if (chatStart === -1) continue
 
         let imagePrompt = ''
-        const begin = output.indexOf(IMAGE_PROMPT_BEGIN)
-        if (begin !== -1) {
+        const promptBegin = output.indexOf(IMAGE_PROMPT_TAG)
+        if (promptBegin !== -1) {
           imagePrompt = output
-            .slice(begin + IMAGE_PROMPT_BEGIN.length, end)
+            .slice(promptBegin + IMAGE_PROMPT_TAG.length, chatStart)
             .trim()
         } else {
           imagePrompt = output
-            .slice(0, end)
+            .slice(0, chatStart)
             .trim()
         }
         if (!imagePrompt) throw new Error('画像生成プロンプトが空です')
 
-        // キャラの着衣度判定テキスト（将来のアップデート用。チャットや画像プロンプトには混入させない）
-        const wearEnd = output.indexOf(CLOTHING_WEAR_LEVEL_END)
-        if (wearEnd !== -1) {
-          const charWearLevelText = output.slice(0, wearEnd).trim()
-          console.log('Detected character clothing wear levels:', charWearLevelText)
+        // [IMAGE_PROMPT] より前のセクション（着衣度判定）
+        const wearSection = promptBegin !== -1 ? output.slice(0, promptBegin).trim() : ''
+
+        // ユーザー着衣度判定テキスト（例: "user wear: 1"）
+        const userWearMatch = wearSection.match(/user[\s_]*wear\s*:\s*([0-9.]+)/i)
+        if (userWearMatch) {
+          console.log('Detected user clothing wear level:', userWearMatch[1])
         }
 
-        // ユーザーの着衣度判定テキスト（将来のアップデート用。チャットや画像プロンプトには混入させない）
-        const userWearBegin = output.indexOf(USER_CLOTHING_WEAR_LEVEL_BEGIN)
-        const userWearEnd = output.indexOf(USER_CLOTHING_WEAR_LEVEL_END)
-        if (userWearBegin !== -1 && userWearEnd !== -1 && userWearEnd > userWearBegin) {
-          const userWearLevelText = output.slice(userWearBegin + USER_CLOTHING_WEAR_LEVEL_BEGIN.length, userWearEnd).trim()
-          console.log('Detected user clothing wear level:', userWearLevelText)
+        // キャラの着衣度判定テキスト（user wear行を除外した各服装タグ行）
+        const charWearLines = wearSection
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line && !line.toLowerCase().startsWith('user'))
+        if (charWearLines.length > 0) {
+          console.log('Detected character clothing wear levels:\n' + charWearLines.join('\n'))
         }
 
         // 画像プロンプトが確定した時点で永続化する。以降の本文ストリームを
@@ -85,19 +83,16 @@ export default async function handler(req, res) {
 
         imagePromptSaved = true
         writeEvent(res, 'image_prompt', { prompt: imagePrompt })
-      }
 
-      if (!imagePromptSaved || chatStarted) {
-        if (chatStarted && delta) writeEvent(res, 'message', { delta })
+        chatStarted = true
+        const initialChatDelta = output.slice(chatStart + CHAT_TAG.length)
+        if (initialChatDelta) writeEvent(res, 'message', { delta: initialChatDelta })
         continue
       }
 
-      const chatStart = output.indexOf(CHAT_MESSAGE_START)
-      if (chatStart === -1) continue
-
-      chatStarted = true
-      const initialChatDelta = output.slice(chatStart + CHAT_MESSAGE_START.length)
-      if (initialChatDelta) writeEvent(res, 'message', { delta: initialChatDelta })
+      if (chatStarted && delta) {
+        writeEvent(res, 'message', { delta })
+      }
     }
     if (!imagePromptSaved || !chatStarted) throw new Error('Gemmaの出力形式が不正です')
     res.write('event: done\ndata: {}\n\n')
