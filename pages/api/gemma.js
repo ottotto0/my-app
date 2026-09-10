@@ -1,5 +1,4 @@
-// pages/api/gemma.js
-import { getGemmaResponseStream } from '../../lib/gemmaClient'
+import { getGemmaResponseStream, completeImagePrompt } from '../../lib/gemmaClient'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -73,16 +72,30 @@ export default async function handler(req, res) {
           console.log('Detected character clothing wear levels:\n' + charWearLines.join('\n'))
         }
 
+        // (i), (ii), (iii), (iv) の手順を踏んで画像生成プロンプトを完成させる
+        let finalImagePrompt = imagePrompt
+        try {
+          finalImagePrompt = await completeImagePrompt({
+            supabase,
+            character,
+            wearSection,
+            rawImagePrompt: imagePrompt,
+          })
+          console.log('Completed image prompt:', finalImagePrompt)
+        } catch (promptErr) {
+          console.error('Failed to complete image prompt, falling back to raw prompt:', promptErr)
+        }
+
         // 画像プロンプトが確定した時点で永続化する。以降の本文ストリームを
         // 待たずに、クライアントへ画像生成開始を通知する。
         const { error: saveError } = await supabase
           .from('characters')
-          .update({ last_image_prompt: imagePrompt })
+          .update({ last_image_prompt: finalImagePrompt })
           .eq('id', character.id)
         if (saveError) throw saveError
 
         imagePromptSaved = true
-        writeEvent(res, 'image_prompt', { prompt: imagePrompt })
+        writeEvent(res, 'image_prompt', { prompt: finalImagePrompt })
 
         chatStarted = true
         const initialChatDelta = output.slice(chatStart + CHAT_TAG.length)
