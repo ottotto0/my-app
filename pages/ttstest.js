@@ -334,14 +334,14 @@ export default function TTSTestPage() {
     // 選択されたトーンプリセット
     const activePreset = TONE_PRESETS.find((p) => p.id === tonePreset)
     if (activePreset && activePreset.instruction) {
-      notes.push(`- Tone & Style: ${activePreset.instruction}`)
+      notes.push(`- Style: ${activePreset.instruction}`)
     }
 
     // 読み上げペース
     if (speakingPace === 'slow') {
-      notes.push('- Pacing: Speak at a relaxed, unhurried, slower pace (around 0.85x).')
+      notes.push('- Pace: Speak at a relaxed, unhurried, slower pace (around 0.85x).')
     } else if (speakingPace === 'fast') {
-      notes.push('- Pacing: Speak briskly and quickly (around 1.25x).')
+      notes.push('- Pace: Speak briskly and quickly (around 1.25x).')
     }
 
     // 音高
@@ -356,13 +356,14 @@ export default function TTSTestPage() {
       notes.push(`- Directing Note: ${customDirectorNote.trim()}`)
     }
 
-    let finalPrompt = ''
+    // 演出指示がある場合は公式推奨のフォーマットでラップ
     if (notes.length > 0) {
-      finalPrompt += `[Performance Directions]\n${notes.join('\n')}\n\n`
+      return `Synthesize speech for the performance defined below. The director's notes are direction only. Do NOT speak them. Speak ONLY the lines under #### TRANSCRIPT.\n\n### DIRECTOR'S NOTES\n${notes.join(
+        '\n'
+      )}\n\n#### TRANSCRIPT\n${inputText}`
     }
-    finalPrompt += `#### TRANSCRIPT\n${inputText}`
 
-    return finalPrompt
+    return inputText
   }
 
   // --- Gemini 3.1 Flash TTS API 呼び出し実行 ---
@@ -375,10 +376,10 @@ export default function TTSTestPage() {
       throw new Error('有効な Google AI Studio APIキーが取得できませんでした。')
     }
 
-    // プロンプト構築
+    // プロンプト構築（systemInstruction は TTS モデルで非対応のためプロンプト内に含める）
     let promptContent = ''
     if (customNotes) {
-      promptContent = `[Performance Directions]\n${customNotes}\n\n#### TRANSCRIPT\n${textToSpeak}`
+      promptContent = `Synthesize speech for the performance defined below. The director's notes are direction only. Do NOT speak them. Speak ONLY the lines under #### TRANSCRIPT.\n\n### DIRECTOR'S NOTES\n- Style: ${customNotes}\n\n#### TRANSCRIPT\n${textToSpeak}`
     } else {
       promptContent = buildPrompt()
     }
@@ -402,13 +403,6 @@ export default function TTSTestPage() {
             },
           },
         },
-      },
-      systemInstruction: {
-        parts: [
-          {
-            text: 'You are an advanced voice synthesis model. Never read performance directions, director notes, or headers aloud. Strictly speak only the text provided under the #### TRANSCRIPT section. Faithfully execute inline audio tags like [whispers], [laughs], [sighs], [excited], etc.',
-          },
-        ],
       },
     }
 
