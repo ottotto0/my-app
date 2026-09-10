@@ -6,7 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 )
 
-// [IMAGE_PROMPT] と [CHAT] の2つのタグのみでセクションを分離
+// [KEY_TAG], [IMAGE_PROMPT], [CHAT] のタグでセクションを分離
+const KEY_TAG_TAG = '[KEY_TAG]'
 const IMAGE_PROMPT_TAG = '[IMAGE_PROMPT]'
 const CHAT_TAG = '[CHAT]'
 
@@ -41,21 +42,47 @@ export default async function handler(req, res) {
         const chatStart = output.indexOf(CHAT_TAG)
         if (chatStart === -1) continue
 
-        let imagePrompt = ''
+        const keyTagBegin = output.indexOf(KEY_TAG_TAG)
         const promptBegin = output.indexOf(IMAGE_PROMPT_TAG)
+
+        let keyTag = ''
+        if (keyTagBegin !== -1) {
+          const keyTagEnd = promptBegin !== -1 && promptBegin > keyTagBegin ? promptBegin : chatStart
+          keyTag = output
+            .slice(keyTagBegin + KEY_TAG_TAG.length, keyTagEnd)
+            .trim()
+            .split('\n')[0]
+            .trim()
+        }
+
+        let imagePrompt = ''
         if (promptBegin !== -1) {
           imagePrompt = output
             .slice(promptBegin + IMAGE_PROMPT_TAG.length, chatStart)
+            .trim()
+        } else if (keyTagBegin !== -1) {
+          imagePrompt = output
+            .slice(keyTagBegin + KEY_TAG_TAG.length, chatStart)
             .trim()
         } else {
           imagePrompt = output
             .slice(0, chatStart)
             .trim()
         }
-        if (!imagePrompt) throw new Error('画像生成プロンプトが空です')
+        if (!imagePrompt && !keyTag) throw new Error('画像生成プロンプトが空です')
 
-        // [IMAGE_PROMPT] より前のセクション（着衣度判定）
-        const wearSection = promptBegin !== -1 ? output.slice(0, promptBegin).trim() : ''
+        // [KEY_TAG] または [IMAGE_PROMPT] より前のセクション（着衣度判定）
+        let wearEnd = -1
+        if (keyTagBegin !== -1) {
+          wearEnd = keyTagBegin
+        } else if (promptBegin !== -1) {
+          wearEnd = promptBegin
+        }
+        const wearSection = wearEnd !== -1 ? output.slice(0, wearEnd).trim() : ''
+
+        if (keyTag) {
+          console.log('Detected key tag:', keyTag)
+        }
 
         // ユーザー着衣度判定テキスト（例: "user wear: 1"）
         const userWearMatch = wearSection.match(/user[\s_]*wear\s*:\s*([0-9.]+)/i)
@@ -80,6 +107,7 @@ export default async function handler(req, res) {
             character,
             wearSection,
             rawImagePrompt: imagePrompt,
+            keyTag,
           })
           console.log('Completed image prompt:', finalImagePrompt)
         } catch (promptErr) {
