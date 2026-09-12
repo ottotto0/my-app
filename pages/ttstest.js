@@ -510,7 +510,7 @@ export default function TTSTestPage() {
     // キャッシュがない場合はサンプル文で短く生成
     setPreviewLoadingVoice(voice.name)
     try {
-      const sampleSentence = `こんにちは！私は${voice.name}です。私の声の特徴は「${voice.tone}」です。[softly] よろしくお願いします！`
+      const sampleSentence = `こんにちは！私は${voice.name}です。私の声の特徴は「${voice.tone}」です。よろしくお願いします！`
       const { url } = await callGeminiTTS(sampleSentence, voice.name, 'Speak naturally and warmly in Japanese.')
 
       previewAudioCacheRef.current[voice.name] = url
