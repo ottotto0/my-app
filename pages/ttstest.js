@@ -213,6 +213,7 @@ export default function TTSTestPage() {
   // --- サンプル試聴キャッシュ & 試聴ステート ---
   const [previewLoadingVoice, setPreviewLoadingVoice] = useState(null)
   const [previewPlayingVoice, setPreviewPlayingVoice] = useState(null)
+  const [previewSavingVoice, setPreviewSavingVoice] = useState(null)
   const previewAudioCacheRef = useRef({}) // { [voiceName]: audioUrl }
   const previewAudioPlayerRef = useRef(null)
 
@@ -541,6 +542,35 @@ export default function TTSTestPage() {
       console.error('試聴再生エラー:', err)
       setPreviewPlayingVoice(null)
     })
+  }
+
+  // --- 話者サンプルのローカル保存ハンドラー ---
+  const handleSavePreview = async (voice) => {
+    let url = previewAudioCacheRef.current[voice.name]
+    if (!url) {
+      setPreviewSavingVoice(voice.name)
+      try {
+        const sampleSentence = `こんにちは！私は${voice.name}です。私の声の特徴は「${voice.tone}」です。[softly] よろしくお願いします！`
+        const { url: generatedUrl } = await callGeminiTTS(sampleSentence, voice.name, 'Speak naturally and warmly in Japanese.')
+        url = generatedUrl
+        previewAudioCacheRef.current[voice.name] = generatedUrl
+      } catch (err) {
+        console.error(`音声保存エラー (${voice.name}):`, err)
+        alert(`保存用音声の生成に失敗しました: ${err.message}`)
+        setPreviewSavingVoice(null)
+        return
+      } finally {
+        setPreviewSavingVoice(null)
+      }
+    }
+
+    // ダウンロード実行
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `gemini_tts_${voice.name}.wav`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
   }
 
   // --- テキストエリアにタグをカーソル位置へ挿入 ---
@@ -1051,6 +1081,7 @@ export default function TTSTestPage() {
                   const isSelected = selectedVoice === voice.name
                   const isPreviewLoading = previewLoadingVoice === voice.name
                   const isPreviewPlaying = previewPlayingVoice === voice.name
+                  const isPreviewSaving = previewSavingVoice === voice.name
 
                   return (
                     <div
@@ -1097,31 +1128,57 @@ export default function TTSTestPage() {
                         </div>
                       </div>
 
-                      {/* 試聴ボタン */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handlePreviewVoice(voice)
-                        }}
-                        disabled={isPreviewLoading}
-                        title={`${voice.name} のサンプル音声を試聴`}
-                        className={`ml-2 flex flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
-                          isPreviewPlaying
-                            ? 'border-pink-500 bg-pink-600 text-white animate-pulse'
-                            : isPreviewLoading
-                            ? 'border-slate-700 bg-slate-800 text-slate-400 cursor-wait'
-                            : 'border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-500 hover:bg-indigo-600 hover:text-white'
-                        }`}
-                      >
-                        {isPreviewLoading ? (
-                          <div className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white" />
-                        ) : isPreviewPlaying ? (
-                          <span>⏹ 停止</span>
-                        ) : (
-                          <span>▶ 試聴</span>
-                        )}
-                      </button>
+                      {/* 試聴 & 保存ボタン群 */}
+                      <div className="ml-2 flex flex-shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handlePreviewVoice(voice)
+                          }}
+                          disabled={isPreviewLoading || isPreviewSaving}
+                          title={`${voice.name} のサンプル音声を試聴`}
+                          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+                            isPreviewPlaying
+                              ? 'border-pink-500 bg-pink-600 text-white animate-pulse'
+                              : isPreviewLoading
+                              ? 'border-slate-700 bg-slate-800 text-slate-400 cursor-wait'
+                              : 'border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-500 hover:bg-indigo-600 hover:text-white'
+                          }`}
+                        >
+                          {isPreviewLoading ? (
+                            <div className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white" />
+                          ) : isPreviewPlaying ? (
+                            <span>⏹ 停止</span>
+                          ) : (
+                            <span>▶ 試聴</span>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSavePreview(voice)
+                          }}
+                          disabled={isPreviewLoading || isPreviewSaving}
+                          title={`${voice.name} のサンプル音声をローカルに保存`}
+                          className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+                            isPreviewSaving
+                              ? 'border-slate-700 bg-slate-800 text-slate-400 cursor-wait'
+                              : 'border-slate-700 bg-slate-800 text-slate-300 hover:border-emerald-500 hover:bg-emerald-600 hover:text-white'
+                          }`}
+                        >
+                          {isPreviewSaving ? (
+                            <div className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white" />
+                          ) : (
+                            <>
+                              <span>💾</span>
+                              <span>保存</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )
                 })}
