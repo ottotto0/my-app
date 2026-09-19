@@ -2,6 +2,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../../../lib/supabaseClient'
 import { useEffect, useState } from 'react'
 import { AppearanceSelector, Dialog, categoryToColumnName } from '../../../components/AppearanceSelector'
+import { VoiceSettingSelector } from '../../../components/VoiceSettingSelector'
 
 export default function EditCharacter() {
   const router = useRouter()
@@ -16,6 +17,13 @@ export default function EditCharacter() {
   const [appearanceValues, setAppearanceValues] = useState({})
   const [loadingAppearance, setLoadingAppearance] = useState(true)
   const [dialog, setDialog] = useState(null)
+  const [voiceSettings, setVoiceSettings] = useState({
+    voice_name: 'Kore',
+    voice_tone_preset: 'default',
+    voice_pace: 'normal',
+    voice_pitch: 'normal',
+    voice_custom_instruction: '',
+  })
 
   useEffect(() => {
     if (!id) return
@@ -41,6 +49,13 @@ export default function EditCharacter() {
         setAge(charData.age || '')
         setDescription(charData.description || '')
         setImageUrl(charData.image_url)
+        setVoiceSettings({
+          voice_name: charData.voice_name || 'Kore',
+          voice_tone_preset: charData.voice_tone_preset || 'default',
+          voice_pace: charData.voice_pace || 'normal',
+          voice_pitch: charData.voice_pitch || 'normal',
+          voice_custom_instruction: charData.voice_custom_instruction || '',
+        })
       }
 
       const activeCategories = (catResult.data || [])
@@ -156,6 +171,11 @@ export default function EditCharacter() {
         description,
         appearance: null,
         image_url,
+        voice_name: voiceSettings.voice_name || 'Kore',
+        voice_tone_preset: voiceSettings.voice_tone_preset || 'default',
+        voice_pace: voiceSettings.voice_pace || 'normal',
+        voice_pitch: voiceSettings.voice_pitch || 'normal',
+        voice_custom_instruction: voiceSettings.voice_custom_instruction || null,
         ...dynamicAppearance,
       })
       .eq('id', id)
@@ -217,6 +237,12 @@ export default function EditCharacter() {
               placeholder="説明"
               rows={4}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            />
+          </div>
+          <div>
+            <VoiceSettingSelector
+              values={voiceSettings}
+              onChange={setVoiceSettings}
             />
           </div>
           <div>
