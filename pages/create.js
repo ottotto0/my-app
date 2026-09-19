@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useRouter } from 'next/router'
 import { AppearanceSelector, Dialog, categoryToColumnName } from '../components/AppearanceSelector'
+import { VoiceSettingSelector } from '../components/VoiceSettingSelector'
 
 export default function CreateCharacter() {
   const [name, setName] = useState('')
@@ -13,6 +14,13 @@ export default function CreateCharacter() {
   const [appearanceValues, setAppearanceValues] = useState({})
   const [loadingAppearance, setLoadingAppearance] = useState(true)
   const [dialog, setDialog] = useState(null)
+  const [voiceSettings, setVoiceSettings] = useState({
+    voice_name: 'Kore',
+    voice_tone_preset: 'default',
+    voice_pace: 'normal',
+    voice_pitch: 'normal',
+    voice_custom_instruction: '',
+  })
   const router = useRouter()
 
   useEffect(() => {
@@ -132,6 +140,11 @@ export default function CreateCharacter() {
           appearance: null,
           image_url,
           last_image_prompt: null,
+          voice_name: voiceSettings.voice_name || 'Kore',
+          voice_tone_preset: voiceSettings.voice_tone_preset || 'default',
+          voice_pace: voiceSettings.voice_pace || 'normal',
+          voice_pitch: voiceSettings.voice_pitch || 'normal',
+          voice_custom_instruction: voiceSettings.voice_custom_instruction || null,
           ...dynamicAppearance,
         },
       ])
@@ -183,6 +196,12 @@ export default function CreateCharacter() {
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            />
+          </div>
+          <div>
+            <VoiceSettingSelector
+              values={voiceSettings}
+              onChange={setVoiceSettings}
             />
           </div>
           <div>
