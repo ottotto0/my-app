@@ -1,6 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../../lib/supabaseClient'
+import { synthesizeSpeech } from '../../../lib/ttsClient'
+
+// チャット画面表示用：感情・アクションタグを除去（ストリーミング中の未完了タグも遮断）
+export function stripDisplayTags(rawText) {
+  if (!rawText) return ''
+  let text = rawText
+  // 文頭が "[" で始まっていて、まだ "]" が閉じていない場合は、タグ生成中と判定して表示しない
+  if (/^\s*\[[^\]]*$/.test(text)) {
+    return ''
+  }
+  // 文頭の確定したタグ "[...]" を除去
+  text = text.replace(/^\s*\[[^\]]+\]\s*/g, '')
+  // 文中の感情タグを除去
+  text = text.replace(/\[(?:whispers|sighs|laughs|giggles|excited|softly|clears throat|gasps|pause|serious|crying|shouting)\]/gi, '')
+  // 文末で未完了の "[..." がある場合はその部分を除去
+  text = text.replace(/\[[^\]]*$/, '')
+  return text
+}
 
 export default function CharacterChat() {
   const router = useRouter()
@@ -15,6 +33,11 @@ export default function CharacterChat() {
   const [menuOpen, setMenuOpen] = useState(false)
   const messageScrollRef = useRef(null)
   const menuRef = useRef(null)
+
+  // 音声再生・生成ステート ('idle' | 'generating' | 'playing')
+  const [audioState, setAudioState] = useState('idle')
+  const audioCacheRef = useRef(null) // { text: '', url: '', audio: Audio }
+  const currentAudioRef = useRef(null)
 
   useEffect(() => {
     if (!id) return
@@ -44,10 +67,104 @@ export default function CharacterChat() {
     return () => document.removeEventListener('mousedown', closeMenu)
   }, [])
 
+  // コンポーネント破棄時やキャラ切り替え時に音声を停止
+  useEffect(() => {
+    return () => {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause()
+        currentAudioRef.current = null
+      }
+    }
+  }, [id])
+
+  // 音声再生 / 停止トグルハンドラー
+  const handleToggleVoice = async (targetMessage) => {
+    if (!targetMessage || !character) return
+
+    // 再生中の場合は停止して通常マークへ
+    if (audioState === 'playing') {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause()
+        currentAudioRef.current.currentTime = 0
+      }
+      setAudioState('idle')
+      return
+    }
+
+    // 生成中なら連打防止
+    if (audioState === 'generating') return
+
+    // 1. キャッシュが存在し、メッセージが一致していて有効な場合
+    if (
+      audioCacheRef.current &&
+      audioCacheRef.current.text === targetMessage &&
+      audioCacheRef.current.audio
+    ) {
+      try {
+        const audio = audioCacheRef.current.audio
+        audio.currentTime = 0
+        currentAudioRef.current = audio
+        audio.onended = () => {
+          setAudioState('idle')
+        }
+        audio.onerror = () => {
+          setAudioState('idle')
+          audioCacheRef.current = null
+        }
+        setAudioState('playing')
+        await audio.play()
+        return
+      } catch (err) {
+        console.warn('キャッシュ音声の即座再生に失敗、再生成を試みます:', err)
+        audioCacheRef.current = null
+      }
+    }
+
+    // 2. 音声データが残っていない場合は、エラー文は表示せずに再度音声生成の手順を踏む
+    setAudioState('generating')
+    try {
+      // 音声生成時にはタグとキャラの最新発言を両方渡す
+      const { url } = await synthesizeSpeech(targetMessage, character)
+      const audio = new Audio(url)
+      audioCacheRef.current = {
+        text: targetMessage,
+        url,
+        audio,
+      }
+      currentAudioRef.current = audio
+
+      audio.onended = () => {
+        setAudioState('idle')
+      }
+      audio.onerror = (err) => {
+        console.error('音声再生エラー:', err)
+        setAudioState('idle')
+        audioCacheRef.current = null
+      }
+
+      // 生成できたと同時に音声再生（ボタンマークは□）
+      setAudioState('playing')
+      await audio.play()
+    } catch (err) {
+      console.error('音声生成エラー:', err)
+      // エラー文は表示せず、再度生成の手順が踏めるようidleに戻す
+      setAudioState('idle')
+      audioCacheRef.current = null
+    }
+  }
+
   const handleSend = async (e) => {
     e.preventDefault()
     const message = input.trim()
     if (!message || loading) return
+
+    // 新たなメッセージ送信時は既存の再生を停止しキャッシュをクリア
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause()
+      currentAudioRef.current = null
+    }
+    setAudioState('idle')
+    audioCacheRef.current = null
 
     const userMessage = { role: 'user', message }
     const newRecords = [...records, userMessage]
@@ -138,6 +255,12 @@ export default function CharacterChat() {
   const handleClearHistory = async () => {
     if (!confirm('本当にこのキャラとの会話履歴を削除しますか？')) return
     setClearing(true)
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause()
+      currentAudioRef.current = null
+    }
+    setAudioState('idle')
+    audioCacheRef.current = null
     await supabase
       .from('characters')
       .update({ records: JSON.stringify([]), image_latest_chat_url: null, last_image_prompt: null })
@@ -152,6 +275,12 @@ export default function CharacterChat() {
   if (!character) return <div className="min-h-screen grid place-items-center text-slate-500">読み込み中...</div>
 
   const characterInitial = character.name?.slice(0, 1) || '?'
+
+  // 最新のキャラ発言のインデックス（音声再生ボタンの対象）
+  const lastAssistantIndex = records
+    .map((r, i) => (r.role === 'assistant' ? i : -1))
+    .filter((i) => i !== -1)
+    .pop()
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-indigo-50 via-slate-50 to-white px-3 py-4 sm:px-6 sm:py-8">
@@ -242,6 +371,14 @@ export default function CharacterChat() {
             )}
             {records.map((record, index) => {
               const isUser = record.role === 'user'
+              const isLatestAssistant = !isUser && index === lastAssistantIndex
+              const displayMessage = isUser ? record.message : stripDisplayTags(record.message)
+
+              // ストリーミング生成中、先頭タグ生成中でまだ本文がない場合は吹き出しを非表示（「入力中...」で代用）
+              if (!isUser && !displayMessage && loading && isLatestAssistant) {
+                return null
+              }
+
               return (
                 <div key={`${record.role}-${index}`} className={`flex gap-2 ${isUser ? 'items-end justify-end' : 'items-start justify-start'}`}>
                   {!isUser && (character.image_url ? (
@@ -249,9 +386,54 @@ export default function CharacterChat() {
                   ) : (
                     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-indigo-500 text-sm font-bold text-white shadow-md">{characterInitial}</div>
                   ))}
-                  <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm leading-6 shadow-sm backdrop-blur-md ${isUser ? 'rounded-br-lg bg-indigo-600/55 text-white' : 'rounded-bl-lg bg-white/40 text-slate-800'}`}>
-                    {record.message}
-                  </div>
+                  {isUser ? (
+                    <div className="max-w-[78%] rounded-3xl rounded-br-lg bg-indigo-600/55 px-4 py-3 text-sm leading-6 text-white shadow-sm backdrop-blur-md">
+                      {record.message}
+                    </div>
+                  ) : (
+                    <div className="flex max-w-[78%] flex-col items-start gap-1">
+                      <div className="rounded-3xl rounded-bl-lg bg-white/40 px-4 py-3 text-sm leading-6 text-slate-800 shadow-sm backdrop-blur-md">
+                        {displayMessage}
+                      </div>
+                      {/* 最新のキャラの吹き出しの左下に音声再生ボタン */}
+                      {isLatestAssistant && !loading && record.message && (
+                        <div className="flex items-center pl-1 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleVoice(record.message)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-indigo-600 shadow-sm border border-indigo-100 hover:bg-white hover:text-indigo-700 transition active:scale-95"
+                            aria-label={
+                              audioState === 'generating'
+                                ? '音声生成中'
+                                : audioState === 'playing'
+                                ? '音声を停止'
+                                : '音声を再生'
+                            }
+                            title={
+                              audioState === 'generating'
+                                ? '音声生成中…'
+                                : audioState === 'playing'
+                                ? '停止'
+                                : '音声再生'
+                            }
+                          >
+                            {audioState === 'generating' ? (
+                              <svg className="h-4 w-4 animate-spin text-indigo-600" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                              </svg>
+                            ) : audioState === 'playing' ? (
+                              <span className="block h-3 w-3 rounded-sm bg-indigo-600"></span>
+                            ) : (
+                              <svg className="h-4 w-4 translate-x-0.5 fill-current" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
