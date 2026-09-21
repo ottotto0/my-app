@@ -10,62 +10,94 @@ const KEY_TAG_PATTERN = /(?:\[\s*key[_\s-]*tag\s*\]\s*:?|\*{2}\[?\s*key[_\s-]*ta
 const IMAGE_PROMPT_PATTERN = /(?:\[\s*image[_\s-]*prompt\s*\]\s*:?|\*{2}\[?\s*image[_\s-]*prompt\s*\]?\*{2}\s*:?|\bimage[_\s-]*prompt\s*:)/i
 const CHAT_PATTERN = /(?:\[\s*chat\s*\]\s*:?|\*{2}\[?\s*chat\s*\]?\*{2}\s*:?|\bchat\s*:|【\s*chat\s*】)/i
 const EMOTION_PATTERN = /\[(?:whispers|sighs|laughs|giggles|excited|softly|clears\s+throat|gasps|pause|serious|crying|shouting)\]/i
+const JAPANESE_CHAR_PATTERN = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/
 
 function parseGemmaSections(output) {
-  const chatMatch = output.match(CHAT_PATTERN)
+  if (!output || !output.trim()) return null
+
   let chatStart = -1
   let chatPrefixLen = 0
 
+  // 1. [CHAT] 明示タグの判定
+  const chatMatch = output.match(CHAT_PATTERN)
   if (chatMatch) {
     chatStart = chatMatch.index
     chatPrefixLen = chatMatch[0].length
   } else {
-    // [CHAT] タグが省略され、感情タグから始まっている場合（IMAGE_PROMPT または KEY_TAG の後）
-    const promptMatch = output.match(IMAGE_PROMPT_PATTERN)
-    const keyMatch = output.match(KEY_TAG_PATTERN)
-    const searchFrom = promptMatch
-      ? promptMatch.index + promptMatch[0].length
-      : (keyMatch ? keyMatch.index + keyMatch[0].length : 0)
-    if (searchFrom > 0) {
-      const sub = output.slice(searchFrom)
-      const emotionMatch = sub.match(EMOTION_PATTERN)
-      if (emotionMatch) {
-        chatStart = searchFrom + emotionMatch.index
-        chatPrefixLen = 0
+    // 2. 感情タグ（[giggles] 等）の判定（Gemmaが[CHAT]を省略して感情タグから直接開始した場合）
+    const emotionMatch = output.match(EMOTION_PATTERN)
+    if (emotionMatch) {
+      chatStart = emotionMatch.index
+      chatPrefixLen = 0
+    } else {
+      // 3. 日本語文字を含む最初の行の判定（タグなしで直接セリフが出力された場合）
+      const lines = output.split('\n')
+      let offset = 0
+      for (const line of lines) {
+        if (JAPANESE_CHAR_PATTERN.test(line)) {
+          chatStart = offset
+          chatPrefixLen = 0
+          break
+        }
+        offset += line.length + 1
       }
     }
   }
 
   if (chatStart === -1) return null
 
-  const preChat = output.slice(0, chatStart)
+  const preChat = output.slice(0, chatStart).trim()
   const initialChatDelta = output.slice(chatStart + chatPrefixLen).trimStart()
 
   const keyMatch = preChat.match(KEY_TAG_PATTERN)
   const promptMatch = preChat.match(IMAGE_PROMPT_PATTERN)
 
-  let wearEnd = -1
-  if (keyMatch) wearEnd = keyMatch.index
-  else if (promptMatch) wearEnd = promptMatch.index
-
-  const wearSection = wearEnd !== -1 ? preChat.slice(0, wearEnd).trim() : ''
-
+  let wearSection = ''
   let keyTag = ''
-  if (keyMatch) {
-    const kStart = keyMatch.index + keyMatch[0].length
-    const kEnd = promptMatch && promptMatch.index > keyMatch.index ? promptMatch.index : preChat.length
-    keyTag = preChat.slice(kStart, kEnd).trim().split('\n')[0].trim()
-  }
-
   let imagePrompt = ''
-  if (promptMatch) {
-    const pStart = promptMatch.index + promptMatch[0].length
-    imagePrompt = preChat.slice(pStart).trim()
-  } else if (keyMatch) {
-    const kStart = keyMatch.index + keyMatch[0].length
-    imagePrompt = preChat.slice(kStart).trim()
+
+  if (keyMatch || promptMatch) {
+    let wearEnd = -1
+    if (keyMatch) wearEnd = keyMatch.index
+    else if (promptMatch) wearEnd = promptMatch.index
+    wearSection = wearEnd !== -1 ? preChat.slice(0, wearEnd).trim() : ''
+
+    if (keyMatch) {
+      const kStart = keyMatch.index + keyMatch[0].length
+      const kEnd = promptMatch && promptMatch.index > keyMatch.index ? promptMatch.index : preChat.length
+      keyTag = preChat.slice(kStart, kEnd).trim().split('\n')[0].replace(/^\[+|\]+$/g, '').trim()
+    }
+    if (promptMatch) {
+      const pStart = promptMatch.index + promptMatch[0].length
+      imagePrompt = preChat.slice(pStart).trim().replace(/^\[+|\]+$/g, '').trim()
+    }
   } else {
-    imagePrompt = preChat.trim()
+    // [KEY_TAG] や [IMAGE_PROMPT] のキーワード自体が省略され、
+    // 着衣度行や角括弧の候補タグ（例: [introducing], [smiling, ...]）が直接並んでいる場合
+    const preLines = preChat.split('\n').map(l => l.trim()).filter(Boolean)
+    const wearLines = []
+    const otherLines = []
+
+    for (const line of preLines) {
+      if (/:\s*[0-9.]+\s*$/i.test(line)) {
+        wearLines.push(line)
+      } else {
+        otherLines.push(line)
+      }
+    }
+    wearSection = wearLines.join('\n')
+
+    const cleanedItems = otherLines.map(l => l.replace(/^\[+|\]+$/g, '').trim()).filter(Boolean)
+    if (cleanedItems.length === 1) {
+      if (cleanedItems[0].includes(',')) {
+        imagePrompt = cleanedItems[0]
+      } else {
+        keyTag = cleanedItems[0]
+      }
+    } else if (cleanedItems.length >= 2) {
+      keyTag = cleanedItems[0]
+      imagePrompt = cleanedItems.slice(1).join(', ')
+    }
   }
 
   return { wearSection, keyTag, imagePrompt, initialChatDelta }
@@ -173,7 +205,7 @@ export default async function handler(req, res) {
       let wearSection = ''
       let keyTag = ''
       let imagePrompt = character.last_image_prompt || ''
-      let chatText = output.trim()
+      let chatText = ''
 
       if (parsed) {
         wearSection = parsed.wearSection
@@ -181,7 +213,13 @@ export default async function handler(req, res) {
         if (parsed.imagePrompt || parsed.keyTag) {
           imagePrompt = parsed.imagePrompt
         }
-        chatText = parsed.initialChatDelta || output.trim()
+        chatText = parsed.initialChatDelta
+      } else {
+        // 万が一パースできなかった場合でも着衣度行と先頭の角括弧タグを除去して本文を抽出
+        chatText = output
+          .replace(/^[^\n]*:\s*[0-9.]+\s*(?:\r?\n|$)/gmi, '')
+          .replace(/^\s*\[[^\]]+\]\s*/gm, '')
+          .trim()
       }
 
       let finalImagePrompt = imagePrompt
