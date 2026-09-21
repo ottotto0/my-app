@@ -141,10 +141,10 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error(error)
     if (res.headersSent) {
-      writeEvent(res, 'error', { error: 'Gemma呼び出しエラー' })
+      writeEvent(res, 'error', { error: error.message || 'Gemma呼び出しエラー' })
       res.end()
       return
     }
-    res.status(500).json({ error: 'Gemma呼び出しエラー' })
+    res.status(500).json({ error: error.message || 'Gemma呼び出しエラー' })
   }
 }
