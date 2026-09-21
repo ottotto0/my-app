@@ -8,7 +8,7 @@ import {
   playAudioBuffer,
 } from '../../../lib/ttsClient'
 
-// チャット画面表示用：感情・アクションタグを除去（ストリーミング中の未完了タグも遮断）
+// チャット画面表示用：着衣度行・プロンプトタグ・感情タグを除去（ストリーミング中の未完了タグも遮断）
 export function stripDisplayTags(rawText) {
   if (!rawText) return ''
   let text = rawText
@@ -16,13 +16,17 @@ export function stripDisplayTags(rawText) {
   if (/^\s*\[[^\]]*$/.test(text)) {
     return ''
   }
-  // 文頭の確定したタグ "[...]" を除去
-  text = text.replace(/^\s*\[[^\]]+\]\s*/g, '')
+  // 着衣度タグ行（例: "green military jacket: 1", "user wear: 1"）が混入している場合に行単位で除去
+  text = text.replace(/^[^\n]*:\s*[0-9.]+\s*(?:\r?\n|$)/gmi, '')
+  // 文頭の角括弧タグ（例: "[introducing]", "[smiling, ...]", "[giggles]"）を連続して除去
+  while (/^\s*\[[^\]]+\]\s*/.test(text)) {
+    text = text.replace(/^\s*\[[^\]]+\]\s*/, '')
+  }
   // 文中の感情タグを除去
-  text = text.replace(/\[(?:whispers|sighs|laughs|giggles|excited|softly|clears throat|gasps|pause|serious|crying|shouting)\]/gi, '')
+  text = text.replace(/\[(?:whispers|sighs|laughs|giggles|excited|softly|clears\s+throat|gasps|pause|serious|crying|shouting)\]/gi, '')
   // 文末で未完了の "[..." がある場合はその部分を除去
   text = text.replace(/\[[^\]]*$/, '')
-  return text
+  return text.trim()
 }
 
 export default function CharacterChat() {
