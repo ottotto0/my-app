@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../../lib/supabaseClient'
-import { synthesizeSpeech } from '../../../lib/ttsClient'
+import {
+  synthesizeSpeech,
+  unlockAudio,
+  decodeAudioData,
+  playAudioBuffer,
+} from '../../../lib/ttsClient'
 
 // チャット画面表示用：感情・アクションタグを除去（ストリーミング中の未完了タグも遮断）
 export function stripDisplayTags(rawText) {
@@ -36,8 +41,19 @@ export default function CharacterChat() {
 
   // 音声再生・生成ステート ('idle' | 'generating' | 'playing')
   const [audioState, setAudioState] = useState('idle')
-  const audioCacheRef = useRef(null) // { text: '', url: '', audio: Audio }
-  const currentAudioRef = useRef(null)
+  const audioCacheRef = useRef(null) // { text: '', url: '', buffer: AudioBuffer }
+  const currentSoundRef = useRef(null) // { stop: () => void }
+
+  const stopCurrentAudio = () => {
+    if (currentSoundRef.current) {
+      try {
+        currentSoundRef.current.stop()
+      } catch (e) {
+        // ignore
+      }
+      currentSoundRef.current = null
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -70,10 +86,7 @@ export default function CharacterChat() {
   // コンポーネント破棄時やキャラ切り替え時に音声を停止
   useEffect(() => {
     return () => {
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current = null
-      }
+      stopCurrentAudio()
     }
   }, [id])
 
@@ -81,12 +94,13 @@ export default function CharacterChat() {
   const handleToggleVoice = async (targetMessage) => {
     if (!targetMessage || !character) return
 
+    // ★最重要：スマホ（iOS Safari / Android）の自動再生ブロックを防ぐため、
+    // ユーザーのタップ直後（同期的）にオーディオをアンロックする
+    unlockAudio()
+
     // 再生中の場合は停止して通常マークへ
     if (audioState === 'playing') {
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current.currentTime = 0
-      }
+      stopCurrentAudio()
       setAudioState('idle')
       return
     }
@@ -98,21 +112,24 @@ export default function CharacterChat() {
     if (
       audioCacheRef.current &&
       audioCacheRef.current.text === targetMessage &&
-      audioCacheRef.current.audio
+      audioCacheRef.current.buffer
     ) {
       try {
-        const audio = audioCacheRef.current.audio
-        audio.currentTime = 0
-        currentAudioRef.current = audio
-        audio.onended = () => {
-          setAudioState('idle')
-        }
-        audio.onerror = () => {
-          setAudioState('idle')
-          audioCacheRef.current = null
-        }
+        stopCurrentAudio()
         setAudioState('playing')
-        await audio.play()
+        currentSoundRef.current = playAudioBuffer(
+          audioCacheRef.current.buffer,
+          () => {
+            setAudioState('idle')
+            currentSoundRef.current = null
+          },
+          (err) => {
+            console.error('キャッシュ音声の即座再生に失敗:', err)
+            setAudioState('idle')
+            currentSoundRef.current = null
+            audioCacheRef.current = null
+          }
+        )
         return
       } catch (err) {
         console.warn('キャッシュ音声の即座再生に失敗、再生成を試みます:', err)
@@ -120,36 +137,43 @@ export default function CharacterChat() {
       }
     }
 
-    // 2. 音声データが残っていない場合は、エラー文は表示せずに再度音声生成の手順を踏む
+    // 2. 音声データが残っていない場合は、音声生成の手順を踏む
     setAudioState('generating')
     try {
       // 音声生成時にはタグとキャラの最新発言を両方渡す
-      const { url } = await synthesizeSpeech(targetMessage, character)
-      const audio = new Audio(url)
+      const { blob, url } = await synthesizeSpeech(targetMessage, character)
+      
+      // Web Audio 用に ArrayBuffer をデコード
+      const arrayBuffer = await blob.arrayBuffer()
+      const audioBuffer = await decodeAudioData(arrayBuffer)
+
       audioCacheRef.current = {
         text: targetMessage,
         url,
-        audio,
-      }
-      currentAudioRef.current = audio
-
-      audio.onended = () => {
-        setAudioState('idle')
-      }
-      audio.onerror = (err) => {
-        console.error('音声再生エラー:', err)
-        setAudioState('idle')
-        audioCacheRef.current = null
+        buffer: audioBuffer,
       }
 
-      // 生成できたと同時に音声再生（ボタンマークは□）
+      stopCurrentAudio()
       setAudioState('playing')
-      await audio.play()
+
+      currentSoundRef.current = playAudioBuffer(
+        audioBuffer,
+        () => {
+          setAudioState('idle')
+          currentSoundRef.current = null
+        },
+        (err) => {
+          console.error('音声再生エラー:', err)
+          setAudioState('idle')
+          currentSoundRef.current = null
+        }
+      )
     } catch (err) {
-      console.error('音声生成エラー:', err)
-      // エラー文は表示せず、再度生成の手順が踏めるようidleに戻す
+      console.error('音声生成/再生エラー:', err)
       setAudioState('idle')
+      currentSoundRef.current = null
       audioCacheRef.current = null
+      alert(err.message || '音声の生成または再生に失敗しました。')
     }
   }
 
@@ -159,10 +183,7 @@ export default function CharacterChat() {
     if (!message || loading) return
 
     // 新たなメッセージ送信時は既存の再生を停止しキャッシュをクリア
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause()
-      currentAudioRef.current = null
-    }
+    stopCurrentAudio()
     setAudioState('idle')
     audioCacheRef.current = null
 
@@ -255,10 +276,7 @@ export default function CharacterChat() {
   const handleClearHistory = async () => {
     if (!confirm('本当にこのキャラとの会話履歴を削除しますか？')) return
     setClearing(true)
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause()
-      currentAudioRef.current = null
-    }
+    stopCurrentAudio()
     setAudioState('idle')
     audioCacheRef.current = null
     await supabase
