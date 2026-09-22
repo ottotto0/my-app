@@ -32,6 +32,8 @@ function formatErrorMessage(err) {
     }
 }
 
+const QUALITY_TAGS = "masterpiece, best quality, ultra detailed, intricate details, High Quality, ";
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
@@ -43,8 +45,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Prompt and character ID are required' });
     }
 
+    const finalPrompt = prompt.startsWith(QUALITY_TAGS) ? prompt : `${QUALITY_TAGS}${prompt}`;
+
     try {
-        console.log(`🎨 Generating image for prompt: ${prompt}`);
+        console.log(`🎨 Generating image for prompt: ${finalPrompt}`);
 
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -98,7 +102,7 @@ export default async function handler(req, res) {
 
                 console.log(`Sending prediction request using candidate: ${candidateLabel}...`);
                 const result = await client.predict("/infer", [
-                    prompt,             // prompt
+                    finalPrompt,        // prompt
                     "lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]", // negative_prompt
                     true,               // use_negative_prompt
                     0,                  // seed
