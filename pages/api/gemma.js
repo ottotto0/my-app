@@ -19,7 +19,7 @@ function writeEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 }
 
-// 新順序フォーマットでのセリフ境界判定
+// ストリーミング中のセリフ境界判定（キャラ発言の安全なストリーミング表示用）
 function findChatBoundaries(output) {
   if (!output || !output.trim()) {
     return { started: false, safeChatText: '', isFinished: false, chatEndIndex: -1 }
@@ -102,12 +102,66 @@ function findChatBoundaries(output) {
   return { started: true, safeChatText, isFinished: false, chatEndIndex: -1 }
 }
 
-// 後続の画像情報テキストから wearSection, keyTag, imagePrompt を抽出
-function parseImageInfo(imageInfoText) {
-  if (!imageInfoText) return { wearSection: '', keyTag: '', imagePrompt: '' }
+// モデルの出力全体（output）から各要素を正確に受け取る（抽出する）関数
+function parseSectionsFromFullOutput(output) {
+  if (!output || !output.trim()) return null
 
-  const keyMatch = imageInfoText.match(KEY_TAG_PATTERN)
-  const promptMatch = imageInfoText.match(IMAGE_PROMPT_PATTERN)
+  // 1. セリフ（CHAT）の開始位置
+  let chatStart = -1
+  let chatPrefixLen = 0
+
+  const chatMatch = output.match(CHAT_PATTERN)
+  if (chatMatch) {
+    chatStart = chatMatch.index
+    chatPrefixLen = chatMatch[0].length
+  } else {
+    const emotionMatch = output.match(EMOTION_PATTERN)
+    if (emotionMatch) {
+      chatStart = emotionMatch.index
+      chatPrefixLen = 0
+    } else {
+      const lines = output.split('\n')
+      let offset = 0
+      for (const line of lines) {
+        if (JAPANESE_CHAR_PATTERN.test(line)) {
+          chatStart = offset
+          chatPrefixLen = 0
+          break
+        }
+        offset += line.length + 1
+      }
+    }
+  }
+
+  if (chatStart === -1) return null
+
+  const chatContentStart = chatStart + chatPrefixLen
+  const leadingWhitespaceMatch = output.slice(chatContentStart).match(/^\s+/)
+  const actualStart = leadingWhitespaceMatch ? chatContentStart + leadingWhitespaceMatch[0].length : chatContentStart
+
+  // 2. セリフの終了位置（後続の画像生成情報の開始位置）
+  const afterChat = output.slice(actualStart)
+  const lines = afterChat.split('\n')
+  let currentOffset = actualStart
+  let chatEndIndex = output.length
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const lineStart = currentOffset
+    currentOffset += line.length + 1
+
+    if (SECTION_START_REGEX.test(line.trim())) {
+      chatEndIndex = lineStart
+      break
+    }
+  }
+
+  const chatText = output.slice(actualStart, chatEndIndex).trimEnd()
+  const postChat = output.slice(chatEndIndex).trim()
+
+  // 3. postChat から wearSection, keyTag, imagePrompt を正確に受け取る
+  const keyMatch = postChat.match(KEY_TAG_PATTERN)
+  const promptMatch = postChat.match(IMAGE_PROMPT_PATTERN)
 
   let wearSection = ''
   let keyTag = ''
@@ -117,23 +171,36 @@ function parseImageInfo(imageInfoText) {
     let wearEnd = -1
     if (keyMatch) wearEnd = keyMatch.index
     else if (promptMatch) wearEnd = promptMatch.index
-    wearSection = wearEnd !== -1 ? imageInfoText.slice(0, wearEnd).trim() : ''
+    wearSection = wearEnd !== -1 ? postChat.slice(0, wearEnd).trim() : ''
 
     if (keyMatch) {
       const kStart = keyMatch.index + keyMatch[0].length
-      const kEnd = promptMatch && promptMatch.index > keyMatch.index ? promptMatch.index : imageInfoText.length
-      keyTag = imageInfoText.slice(kStart, kEnd).trim().split('\n')[0].replace(/^\[+|\]+$/g, '').trim()
+      const kEnd = promptMatch && promptMatch.index > keyMatch.index ? promptMatch.index : postChat.length
+      keyTag = postChat.slice(kStart, kEnd)
+        .trim()
+        .split('\n')[0]
+        .replace(/^\[+|\]+$/g, '')
+        .replace(/^["'`]+|["'`]+$/g, '')
+        .trim()
     }
     if (promptMatch) {
       const pStart = promptMatch.index + promptMatch[0].length
-      imagePrompt = imageInfoText.slice(pStart).trim().replace(/^\[+|\]+$/g, '').trim()
+      const rawPrompt = postChat.slice(pStart).trim()
+      // タグ行を抽出（余計なト書きや見出しを除外）
+      const promptLines = rawPrompt.split('\n').map(l => l.trim()).filter(Boolean)
+      const validLines = []
+      for (const pl of promptLines) {
+        if (JAPANESE_CHAR_PATTERN.test(pl) && !pl.includes(',')) break
+        validLines.push(pl.replace(/^\[+|\]+$/g, '').replace(/^["'`]+|["'`]+$/g, ''))
+      }
+      imagePrompt = validLines.join(', ').trim()
     }
   } else {
-    // [KEY_TAG] や [IMAGE_PROMPT] が省略された場合
-    const lines = imageInfoText.split('\n').map(l => l.trim()).filter(Boolean)
+    // [KEY_TAG] や [IMAGE_PROMPT] のキーワード自体が省略されていた場合
+    const postLines = postChat.split('\n').map(l => l.trim()).filter(Boolean)
     const wearLines = []
     const otherLines = []
-    for (const line of lines) {
+    for (const line of postLines) {
       if (/:\s*[0-9.]+\s*$/i.test(line)) {
         wearLines.push(line)
       } else {
@@ -151,10 +218,10 @@ function parseImageInfo(imageInfoText) {
     }
   }
 
-  return { wearSection, keyTag, imagePrompt }
+  return { chatText, wearSection, keyTag, imagePrompt }
 }
 
-// 旧順序フォーマット用のフォールバックパース関数
+// 旧順序フォーマット（着衣度先行）用のフォールバックパース関数
 function parseOldGemmaSections(output) {
   if (!output || !output.trim()) return null
 
@@ -188,7 +255,50 @@ function parseOldGemmaSections(output) {
 
   const preChat = output.slice(0, chatStart).trim()
   const initialChatDelta = output.slice(chatStart + chatPrefixLen).trimStart()
-  const { wearSection, keyTag, imagePrompt } = parseImageInfo(preChat)
+
+  const keyMatch = preChat.match(KEY_TAG_PATTERN)
+  const promptMatch = preChat.match(IMAGE_PROMPT_PATTERN)
+
+  let wearSection = ''
+  let keyTag = ''
+  let imagePrompt = ''
+
+  if (keyMatch || promptMatch) {
+    let wearEnd = -1
+    if (keyMatch) wearEnd = keyMatch.index
+    else if (promptMatch) wearEnd = promptMatch.index
+    wearSection = wearEnd !== -1 ? preChat.slice(0, wearEnd).trim() : ''
+
+    if (keyMatch) {
+      const kStart = keyMatch.index + keyMatch[0].length
+      const kEnd = promptMatch && promptMatch.index > keyMatch.index ? promptMatch.index : preChat.length
+      keyTag = preChat.slice(kStart, kEnd).trim().split('\n')[0].replace(/^\[+|\]+$/g, '').trim()
+    }
+    if (promptMatch) {
+      const pStart = promptMatch.index + promptMatch[0].length
+      imagePrompt = preChat.slice(pStart).trim().replace(/^\[+|\]+$/g, '').trim()
+    }
+  } else {
+    const preLines = preChat.split('\n').map(l => l.trim()).filter(Boolean)
+    const wearLines = []
+    const otherLines = []
+    for (const line of preLines) {
+      if (/:\s*[0-9.]+\s*$/i.test(line)) {
+        wearLines.push(line)
+      } else {
+        otherLines.push(line)
+      }
+    }
+    wearSection = wearLines.join('\n')
+    const cleanedItems = otherLines.map(l => l.replace(/^\[+|\]+$/g, '').trim()).filter(Boolean)
+    if (cleanedItems.length === 1) {
+      if (cleanedItems[0].includes(',')) imagePrompt = cleanedItems[0]
+      else keyTag = cleanedItems[0]
+    } else if (cleanedItems.length >= 2) {
+      keyTag = cleanedItems[0]
+      imagePrompt = cleanedItems.slice(1).join(', ')
+    }
+  }
 
   return { wearSection, keyTag, imagePrompt, initialChatDelta }
 }
@@ -214,8 +324,6 @@ export default async function handler(req, res) {
     let streamedChat = ''
     let chatStarted = false
     let chatCompleted = false
-    let chatEndIndex = -1
-    let imagePromptSaved = false
     let isOldFormatDetected = false
 
     for await (const delta of getGemmaResponseStream(character, userMessage, records)) {
@@ -235,46 +343,16 @@ export default async function handler(req, res) {
         }
       }
 
-      // 1. 旧形式フォールバック処理
+      // 1. 旧形式フォールバック処理（万が一旧順序で出力された場合）
       if (isOldFormatDetected) {
-        if (!imagePromptSaved) {
-          const parsed = parseOldGemmaSections(output)
-          if (!parsed) continue
-
-          let { wearSection, keyTag, imagePrompt, initialChatDelta } = parsed
-          if (!imagePrompt && !keyTag) {
-            imagePrompt = character.last_image_prompt || ''
-          }
-
-          let finalImagePrompt = imagePrompt
-          try {
-            finalImagePrompt = await completeImagePrompt({
-              supabase,
-              character,
-              wearSection,
-              rawImagePrompt: imagePrompt,
-              keyTag,
-            })
-          } catch (promptErr) {
-            console.error('Failed to complete image prompt:', promptErr)
-          }
-
-          await supabase
-            .from('characters')
-            .update({ last_image_prompt: finalImagePrompt })
-            .eq('id', character.id)
-
-          imagePromptSaved = true
-          writeEvent(res, 'image_prompt', { prompt: finalImagePrompt })
+        const parsed = parseOldGemmaSections(output)
+        if (parsed && !chatStarted) {
           chatStarted = true
-          if (initialChatDelta) {
-            streamedChat += initialChatDelta
-            writeEvent(res, 'message', { delta: initialChatDelta })
+          if (parsed.initialChatDelta) {
+            streamedChat += parsed.initialChatDelta
+            writeEvent(res, 'message', { delta: parsed.initialChatDelta })
           }
-          continue
-        }
-
-        if (chatStarted && delta) {
+        } else if (chatStarted && delta) {
           streamedChat += delta
           writeEvent(res, 'message', { delta })
         }
@@ -293,117 +371,102 @@ export default async function handler(req, res) {
           }
         }
 
+        // セリフの出力が終了した瞬間に chat_done イベントを送信
+        // （クライアント側で音声再生ボタンが即座に有効化され、画像出力中でも音声再生可能になる）
         if (bounds.isFinished) {
           chatCompleted = true
-          chatEndIndex = bounds.chatEndIndex
           console.log('Character utterance completed during streaming. Safe chat text:', JSON.stringify(bounds.safeChatText))
-          // セリフ確定イベント送信（クライアントで音声再生ボタンが即時有効化される）
           writeEvent(res, 'chat_done', { text: bounds.safeChatText })
-        }
-      }
-
-      // セリフ完了後、後続の画像プロンプト情報が出力されている途中で早期確定できるかチェック
-      if (chatCompleted && !imagePromptSaved && chatEndIndex !== -1) {
-        const imageInfoText = output.slice(chatEndIndex).trim()
-        const promptMatch = imageInfoText.match(IMAGE_PROMPT_PATTERN)
-        // [IMAGE_PROMPT] が出現し、その後の行が存在して改行または十分な長さがある場合
-        if (promptMatch) {
-          const afterPrompt = imageInfoText.slice(promptMatch.index + promptMatch[0].length).trim()
-          if (afterPrompt.includes('\n') || (afterPrompt.includes(',') && afterPrompt.length > 20)) {
-            const { wearSection, keyTag, imagePrompt } = parseImageInfo(imageInfoText)
-            let finalImagePrompt = imagePrompt || character.last_image_prompt || ''
-            try {
-              finalImagePrompt = await completeImagePrompt({
-                supabase,
-                character,
-                wearSection,
-                rawImagePrompt: imagePrompt,
-                keyTag,
-              })
-              console.log('Completed image prompt (early):', finalImagePrompt)
-            } catch (err) {
-              console.error('Error completing image prompt early:', err)
-            }
-
-            try {
-              await supabase
-                .from('characters')
-                .update({ last_image_prompt: finalImagePrompt })
-                .eq('id', character.id)
-            } catch (saveErr) {
-              console.error('Error saving image prompt early:', saveErr)
-            }
-
-            imagePromptSaved = true
-            writeEvent(res, 'image_prompt', { prompt: finalImagePrompt })
-          }
         }
       }
     }
 
-    // ストリーム終了後の後処理
+    // ストリーム受信完了後の処理
+    // モデルからの出力をすべて受信しきった状態で、画像生成タグを完全な形で受け取って修正・保存する
     if (isOldFormatDetected) {
       if (!chatCompleted) {
         writeEvent(res, 'chat_done', { text: streamedChat })
         chatCompleted = true
       }
-    } else {
-      // 1. セリフがまだ確定していなかった場合の処理（セリフのみで終わった場合など）
-      if (!chatCompleted) {
-        let finalChat = ''
-        const bounds = findChatBoundaries(output)
-        if (bounds.started) {
-          finalChat = bounds.safeChatText || output
-          chatEndIndex = bounds.isFinished ? bounds.chatEndIndex : output.length
-        } else {
-          finalChat = output
-            .replace(/^[^\n]*:\s*[0-9.]+\s*(?:\r?\n|$)/gmi, '')
-            .replace(/^\s*\[[^\]]+\]\s*/gm, '')
-            .trim()
-          chatEndIndex = output.length
-        }
+      const parsed = parseOldGemmaSections(output)
+      let wearSection = parsed?.wearSection || ''
+      let keyTag = parsed?.keyTag || ''
+      let imagePrompt = parsed?.imagePrompt || character.last_image_prompt || ''
 
-        const remainingDelta = finalChat.slice(streamedChat.length)
+      let finalImagePrompt = imagePrompt
+      try {
+        finalImagePrompt = await completeImagePrompt({
+          supabase,
+          character,
+          wearSection,
+          rawImagePrompt: imagePrompt,
+          keyTag,
+        })
+        console.log('Completed image prompt (old format fallback):', finalImagePrompt)
+      } catch (promptErr) {
+        console.error('Failed to complete image prompt (old format):', promptErr)
+      }
+
+      await supabase
+        .from('characters')
+        .update({ last_image_prompt: finalImagePrompt })
+        .eq('id', character.id)
+
+      writeEvent(res, 'image_prompt', { prompt: finalImagePrompt })
+    } else {
+      // 1. セリフがストリーム中に確定していなかった場合の安全処理
+      const parsedSections = parseSectionsFromFullOutput(output)
+      const fullChat = parsedSections?.chatText || output
+        .replace(/^[^\n]*:\s*[0-9.]+\s*(?:\r?\n|$)/gmi, '')
+        .replace(/^\s*\[[^\]]+\]\s*/gm, '')
+        .trim()
+
+      if (!chatCompleted) {
+        const remainingDelta = fullChat.slice(streamedChat.length)
         if (remainingDelta) {
-          streamedChat = finalChat
+          streamedChat = fullChat
           writeEvent(res, 'message', { delta: remainingDelta })
         }
-
-        writeEvent(res, 'chat_done', { text: finalChat })
+        writeEvent(res, 'chat_done', { text: fullChat })
         chatCompleted = true
       }
 
-      // 2. 画像プロンプトがまだ確定していなかった場合の処理
-      if (!imagePromptSaved) {
-        const imageInfoText = chatEndIndex !== -1 ? output.slice(chatEndIndex).trim() : ''
-        const { wearSection, keyTag, imagePrompt } = parseImageInfo(imageInfoText)
+      // 2. 言語生成モデルが生成した画像生成タグの完全な受け取りとプロンプト完成処理
+      const wearSection = parsedSections?.wearSection || ''
+      const keyTag = parsedSections?.keyTag || ''
+      const rawImagePrompt = parsedSections?.imagePrompt || character.last_image_prompt || ''
 
-        let finalImagePrompt = imagePrompt || character.last_image_prompt || ''
-        try {
-          finalImagePrompt = await completeImagePrompt({
-            supabase,
-            character,
-            wearSection,
-            rawImagePrompt: imagePrompt,
-            keyTag,
-          })
-          console.log('Completed image prompt (on stream end):', finalImagePrompt)
-        } catch (err) {
-          console.error('Error completing image prompt on stream end:', err)
-        }
+      console.log('--- Received image generation tags from model ---')
+      console.log('wearSection:\n', wearSection)
+      console.log('keyTag:', keyTag)
+      console.log('rawImagePrompt:', rawImagePrompt)
 
-        try {
-          await supabase
-            .from('characters')
-            .update({ last_image_prompt: finalImagePrompt })
-            .eq('id', character.id)
-        } catch (saveErr) {
-          console.error('Error saving image prompt on stream end:', saveErr)
-        }
-
-        imagePromptSaved = true
-        writeEvent(res, 'image_prompt', { prompt: finalImagePrompt })
+      // 画像生成タグの修正手順（completeImagePrompt）を一切変えずに実行
+      let finalImagePrompt = rawImagePrompt
+      try {
+        finalImagePrompt = await completeImagePrompt({
+          supabase,
+          character,
+          wearSection,
+          rawImagePrompt,
+          keyTag,
+        })
+        console.log('Completed final image prompt:', finalImagePrompt)
+      } catch (promptErr) {
+        console.error('Failed to complete image prompt:', promptErr)
       }
+
+      // Supabase の last_image_prompt を更新し、クライアントに通知して画像生成を開始
+      try {
+        await supabase
+          .from('characters')
+          .update({ last_image_prompt: finalImagePrompt })
+          .eq('id', character.id)
+      } catch (saveErr) {
+        console.error('Error saving last_image_prompt to Supabase:', saveErr)
+      }
+
+      writeEvent(res, 'image_prompt', { prompt: finalImagePrompt })
     }
 
     writeEvent(res, 'done', {})
