@@ -45,6 +45,7 @@ export default function CharacterChat() {
 
   // 音声再生・生成ステート ('idle' | 'generating' | 'playing')
   const [audioState, setAudioState] = useState('idle')
+  const [canPlayVoice, setCanPlayVoice] = useState(false)
   const audioCacheRef = useRef(null) // { text: '', url: '', buffer: AudioBuffer }
   const currentSoundRef = useRef(null) // { stop: () => void }
 
@@ -189,6 +190,7 @@ export default function CharacterChat() {
     // 新たなメッセージ送信時は既存の再生を停止しキャッシュをクリア
     stopCurrentAudio()
     setAudioState('idle')
+    setCanPlayVoice(false)
     audioCacheRef.current = null
 
     const userMessage = { role: 'user', message }
@@ -230,6 +232,15 @@ export default function CharacterChat() {
           if (eventType === 'done') {
             streamComplete = true
             break
+          }
+          if (eventType === 'chat_done') {
+            // キャラ発言が出力完了した時点で音声再生ボタンを即座に有効化
+            setCanPlayVoice(true)
+            if (data.text) {
+              reply = data.text
+              setRecords([...newRecords, { role: 'assistant', message: reply }])
+            }
+            continue
           }
           if (eventType === 'image_prompt') {
             // サーバー側で last_image_prompt を保存した後に届くイベント。
@@ -418,7 +429,7 @@ export default function CharacterChat() {
                         {displayMessage}
                       </div>
                       {/* 最新のキャラの吹き出しの左下に音声再生ボタン */}
-                      {isLatestAssistant && !loading && record.message && (
+                      {isLatestAssistant && (canPlayVoice || !loading) && record.message && (
                         <div className="flex items-center pl-1 pt-0.5">
                           <button
                             type="button"
@@ -459,7 +470,7 @@ export default function CharacterChat() {
                 </div>
               )
             })}
-            {loading && (
+            {loading && !canPlayVoice && (
               <div className="flex items-end gap-2">
                 {character.image_url ? <img src={character.image_url} alt="" className="h-9 w-9 rounded-2xl object-cover shadow-md" /> : <div className="grid h-9 w-9 place-items-center rounded-2xl bg-indigo-500 text-sm font-bold text-white">{characterInitial}</div>}
                 <div className="rounded-3xl rounded-bl-lg bg-white/40 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-md">{character.name}が入力中<span className="animate-pulse">...</span></div>
