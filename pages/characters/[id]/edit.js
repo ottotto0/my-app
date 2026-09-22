@@ -169,7 +169,6 @@ export default function EditCharacter() {
         name,
         age,
         description,
-        appearance: null,
         image_url,
         voice_name: voiceSettings.voice_name || 'Kore',
         voice_tone_preset: voiceSettings.voice_tone_preset || 'default',
