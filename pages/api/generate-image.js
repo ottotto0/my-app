@@ -1,4 +1,36 @@
 import { Client } from "@gradio/client";
+import { createClient } from "@supabase/supabase-js";
+
+async function markTokenUsed(supabase, selected) {
+    if (!selected?.id) return;
+    try {
+        await Promise.all([
+            supabase.from('hf_tokens').update({ is_last_used: false }).neq('id', selected.id),
+            supabase.from('hf_tokens').update({ is_last_used: true }).eq('id', selected.id)
+        ]).then(results => {
+            results.forEach(({ error }) => {
+                if (error) console.error("Error updating token status:", error);
+            });
+        });
+    } catch (err) {
+        console.error("Error updating token status:", err);
+    }
+}
+
+function formatErrorMessage(err) {
+    if (!err) return 'Image generation failed';
+    if (typeof err === 'string') return err;
+    if (err.message && err.title && err.message !== err.title) {
+        return `${err.title}: ${err.message}`;
+    }
+    if (err.message) return err.message;
+    if (err.title) return err.title;
+    try {
+        return JSON.stringify(err);
+    } catch {
+        return String(err);
+    }
+}
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -14,7 +46,6 @@ export default async function handler(req, res) {
     try {
         console.log(`🎨 Generating image for prompt: ${prompt}`);
 
-        const { createClient } = require('@supabase/supabase-js');
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
         const supabase = createClient(supabaseUrl, supabaseKey);
@@ -29,65 +60,80 @@ export default async function handler(req, res) {
             console.error("Error fetching tokens from Supabase:", fetchError);
         }
 
-        let client;
-
-        console.log(`Initializing Gradio Client for Menyu/wainsfw...`);
-
+        const candidates = [];
         if (tokens && tokens.length > 0) {
             const n = tokens.length;
-            let lastUsedIndex = tokens.findIndex(t => t.is_last_used === true);
-            let nextIndex = (lastUsedIndex === -1) ? 0 : (lastUsedIndex + 1) % n;
-            const selected = tokens[nextIndex];
-            const hfToken = selected.token;
+            const lastUsedIndex = tokens.findIndex(t => t.is_last_used === true);
+            const startIndex = (lastUsedIndex === -1) ? 0 : (lastUsedIndex + 1) % n;
 
-            console.log(`Using token ${selected.name || selected.id} for authentication. Token length: ${hfToken ? hfToken.length : 0}`);
-
-            // チャット生成で選んだトークンとは別のものを確定させてから画像を
-            // 生成する。画像完了後の次回取得では、この次のトークンが選ばれる。
-            await Promise.all([
-                supabase.from('hf_tokens').update({ is_last_used: false }).neq('id', selected.id),
-                supabase.from('hf_tokens').update({ is_last_used: true }).eq('id', selected.id)
-            ]).then(results => {
-                results.forEach(({ error }) => {
-                    if (error) console.error("Error updating token status:", error);
-                });
-            });
-
-            // Try passing token in both hf_token and headers to be safe
-            client = await Client.connect("Menyu/wainsfw", {
-                hf_token: hfToken,
-                headers: { "Authorization": `Bearer ${hfToken}` }
-            });
-        } else {
-            console.log("No active tokens found in Supabase, using anonymous access.");
-            client = await Client.connect("Menyu/wainsfw");
+            for (let i = 0; i < n; i++) {
+                const idx = (startIndex + i) % n;
+                candidates.push(tokens[idx]);
+            }
         }
-
-        const result = await client.predict("/infer", [
-            prompt,             // prompt
-            "lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]", // negative_prompt
-            true,               // use_negative_prompt
-            0,                  // seed
-            832,                // width
-            1216,               // height
-            7,                  // guidance_scale
-            28,                 // num_inference_steps
-            true,               // randomize_seed
-        ]);
-
-        // result.data is an array of outputs. The first output is the image.
-        // The image object usually has a 'url' property.
-        const imageResult = result.data[0];
+        // 最後に匿名（tokenなし）もフォールバック候補として追加
+        candidates.push(null);
 
         let imageUrl = null;
-        if (imageResult && imageResult.url) {
-            imageUrl = imageResult.url;
-        } else if (typeof imageResult === 'string') {
-            imageUrl = imageResult;
+        let lastError = null;
+
+        for (let i = 0; i < candidates.length; i++) {
+            const candidate = candidates[i];
+            const candidateLabel = candidate ? (candidate.name || `ID:${candidate.id}`) : 'anonymous';
+            const hfToken = candidate?.token;
+
+            try {
+                let client;
+                if (hfToken) {
+                    console.log(`[Attempt ${i + 1}/${candidates.length}] Using token ${candidateLabel} (length: ${hfToken.length}) for Menyu/wainsfw`);
+                    await markTokenUsed(supabase, candidate);
+                    client = await Client.connect("Menyu/wainsfw", {
+                        hf_token: hfToken,
+                        headers: { "Authorization": `Bearer ${hfToken}` }
+                    });
+                } else {
+                    console.log(`[Attempt ${i + 1}/${candidates.length}] Using anonymous access for Menyu/wainsfw`);
+                    client = await Client.connect("Menyu/wainsfw");
+                }
+
+                console.log(`Sending prediction request using candidate: ${candidateLabel}...`);
+                const result = await client.predict("/infer", [
+                    prompt,             // prompt
+                    "lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]", // negative_prompt
+                    true,               // use_negative_prompt
+                    0,                  // seed
+                    832,                // width
+                    1216,               // height
+                    7,                  // guidance_scale
+                    28,                 // num_inference_steps
+                    true,               // randomize_seed
+                ]);
+
+                const imageResult = result?.data?.[0];
+                if (imageResult && imageResult.url) {
+                    imageUrl = imageResult.url;
+                } else if (typeof imageResult === 'string') {
+                    imageUrl = imageResult;
+                }
+
+                if (!imageUrl) {
+                    throw new Error('No image URL returned from Gradio API');
+                }
+
+                console.log(`✅ Image generation successful with candidate: ${candidateLabel}`);
+                break;
+            } catch (err) {
+                lastError = err;
+                const errDetail = formatErrorMessage(err);
+                console.warn(`⚠️ Candidate [${candidateLabel}] failed: ${errDetail}`);
+                if (i < candidates.length - 1) {
+                    console.log(`🔄 Switching to next token candidate...`);
+                }
+            }
         }
 
         if (!imageUrl) {
-            throw new Error('No image URL returned from Gradio API');
+            throw lastError || new Error('All image generation candidates failed');
         }
 
         // 生成元の URL は期限切れになるため、画像本体を Supabase Storage に保存する。
@@ -125,6 +171,7 @@ export default async function handler(req, res) {
 
     } catch (error) {
         console.error('🔴 Image Generation Error:', error);
-        res.status(500).json({ error: error.message || 'Image generation failed' });
+        res.status(500).json({ error: formatErrorMessage(error) });
     }
 }
+
