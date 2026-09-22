@@ -137,7 +137,6 @@ export default function CreateCharacter() {
           name,
           age,
           description,
-          appearance: null,
           image_url,
           last_image_prompt: null,
           voice_name: voiceSettings.voice_name || 'Kore',
