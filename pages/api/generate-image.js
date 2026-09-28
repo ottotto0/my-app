@@ -33,6 +33,7 @@ function formatErrorMessage(err) {
 }
 
 const QUALITY_TAGS = "masterpiece, best quality, ultra detailed, intricate details, High Quality, ";
+const NEGATIVE_PROMPT = "worst quality, low quality, bad quality, normal quality, lowres, jpeg artifacts, bad anatomy, bad hands, bad face, poorly drawn face, poorly drawn eyes, poorly drawn hands, missing fingers, extra fingers, fewer digits, mutated hands, extra limbs, missing arms, missing legs, malformed limbs, fused fingers, too many fingers, signature, watermark, username, text, error, blurry, cropped, out of frame, gross proportions, unnatural body";
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -89,28 +90,27 @@ export default async function handler(req, res) {
             try {
                 let client;
                 if (hfToken) {
-                    console.log(`[Attempt ${i + 1}/${candidates.length}] Using token ${candidateLabel} (length: ${hfToken.length}) for Menyu/wainsfw`);
+                    console.log(`[Attempt ${i + 1}/${candidates.length}] Using token ${candidateLabel} (length: ${hfToken.length}) for alexander00001/Private.Test.Space.2`);
                     await markTokenUsed(supabase, candidate);
-                    client = await Client.connect("Menyu/wainsfw", {
+                    client = await Client.connect("alexander00001/Private.Test.Space.2", {
                         hf_token: hfToken,
                         headers: { "Authorization": `Bearer ${hfToken}` }
                     });
                 } else {
-                    console.log(`[Attempt ${i + 1}/${candidates.length}] Using anonymous access for Menyu/wainsfw`);
-                    client = await Client.connect("Menyu/wainsfw");
+                    console.log(`[Attempt ${i + 1}/${candidates.length}] Using anonymous access for alexander00001/Private.Test.Space.2`);
+                    client = await Client.connect("alexander00001/Private.Test.Space.2");
                 }
 
                 console.log(`Sending prediction request using candidate: ${candidateLabel}...`);
-                const result = await client.predict("/infer", [
-                    finalPrompt,        // prompt
-                    "lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]", // negative_prompt
-                    true,               // use_negative_prompt
-                    0,                  // seed
-                    832,                // width
-                    1216,               // height
-                    7,                  // guidance_scale
-                    28,                 // num_inference_steps
-                    true,               // randomize_seed
+                const result = await client.predict("/on_generate", [
+                    finalPrompt,        // prompt (Detailed Prompt: 既存のプロンプト処理をそのまま維持)
+                    "Anime",            // style (Style Preset: Anime)
+                    NEGATIVE_PROMPT,    // neg_prompt (アニメ向けネガティブプロンプト)
+                    20,                 // steps (10 - 50)
+                    6,                  // cfg (1.0 - 15.0)
+                    -1,                 // seed (-1 for random)
+                    832,                // width (既存サイズ維持)
+                    1216,               // height (既存サイズ維持)
                 ]);
 
                 const imageResult = result?.data?.[0];
