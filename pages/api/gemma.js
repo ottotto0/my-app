@@ -6,14 +6,15 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 // セクション区切りマーカー
-const KEY_TAG_PATTERN = /(?:\[\s*key[_\s-]*tag\s*\]\s*:?|\*{2}\[?\s*key[_\s-]*tag\s*\]?\*{2}\s*:?|\bkey[_\s-]*tag\s*:)/i
+const STATE_TAG_PATTERN = /(?:\[\s*(?:state|key)[_\s-]*tag\s*\]\s*:?|\*{2}\[?\s*(?:state|key)[_\s-]*tag\s*\]?\*{2}\s*:?|\b(?:state|key)[_\s-]*tag\s*:)/i
+const KEY_TAG_PATTERN = STATE_TAG_PATTERN
 const IMAGE_PROMPT_PATTERN = /(?:\[\s*image[_\s-]*prompt\s*\]\s*:?|\*{2}\[?\s*image[_\s-]*prompt\s*\]?\*{2}\s*:?|\bimage[_\s-]*prompt\s*:)/i
 const CHAT_PATTERN = /(?:\[\s*chat\s*\]\s*:?|\*{2}\[?\s*chat\s*\]?\*{2}\s*:?|\bchat\s*:|【\s*chat\s*】)/i
 const EMOTION_PATTERN = /\[(?:whispers|sighs|laughs|giggles|excited|softly|clears\s+throat|gasps|pause|serious|crying|shouting)\]/i
 const JAPANESE_CHAR_PATTERN = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/
 
 // 後続セクション（着衣度・画像プロンプト情報）の開始行判定
-const SECTION_START_REGEX = /^(?:\[\s*(?:key[_\s-]*tag|image[_\s-]*prompt|clothing|wear|status)\s*\]|user[\s_]*wear\s*:|[a-z0-9_\s-–—]+:\s*[0-9.]+)/i
+const SECTION_START_REGEX = /^(?:\[\s*(?:state[_\s-]*tag|key[_\s-]*tag|image[_\s-]*prompt|clothing|wear|status)\s*\]|user[\s_]*wear\s*:|[a-z0-9_\s-–—]+:\s*[0-9.]+)/i
 
 function writeEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
@@ -159,12 +160,12 @@ function parseSectionsFromFullOutput(output) {
   const chatText = output.slice(actualStart, chatEndIndex).trimEnd()
   const postChat = output.slice(chatEndIndex).trim()
 
-  // 3. postChat から wearSection, keyTag, imagePrompt を正確に受け取る
-  const keyMatch = postChat.match(KEY_TAG_PATTERN)
+  // 3. postChat から wearSection, stateTag, imagePrompt を正確に受け取る
+  const keyMatch = postChat.match(STATE_TAG_PATTERN)
   const promptMatch = postChat.match(IMAGE_PROMPT_PATTERN)
 
   let wearSection = ''
-  let keyTag = ''
+  let stateTag = ''
   let imagePrompt = ''
 
   if (keyMatch || promptMatch) {
@@ -176,7 +177,7 @@ function parseSectionsFromFullOutput(output) {
     if (keyMatch) {
       const kStart = keyMatch.index + keyMatch[0].length
       const kEnd = promptMatch && promptMatch.index > keyMatch.index ? promptMatch.index : postChat.length
-      keyTag = postChat.slice(kStart, kEnd)
+      stateTag = postChat.slice(kStart, kEnd)
         .trim()
         .split('\n')[0]
         .replace(/^\[+|\]+$/g, '')
@@ -196,7 +197,7 @@ function parseSectionsFromFullOutput(output) {
       imagePrompt = validLines.join(', ').trim()
     }
   } else {
-    // [KEY_TAG] や [IMAGE_PROMPT] のキーワード自体が省略されていた場合
+    // [STATE_TAG] や [IMAGE_PROMPT] のキーワード自体が省略されていた場合
     const postLines = postChat.split('\n').map(l => l.trim()).filter(Boolean)
     const wearLines = []
     const otherLines = []
@@ -211,14 +212,14 @@ function parseSectionsFromFullOutput(output) {
     const cleanedItems = otherLines.map(l => l.replace(/^\[+|\]+$/g, '').trim()).filter(Boolean)
     if (cleanedItems.length === 1) {
       if (cleanedItems[0].includes(',')) imagePrompt = cleanedItems[0]
-      else keyTag = cleanedItems[0]
+      else stateTag = cleanedItems[0]
     } else if (cleanedItems.length >= 2) {
-      keyTag = cleanedItems[0]
+      stateTag = cleanedItems[0]
       imagePrompt = cleanedItems.slice(1).join(', ')
     }
   }
 
-  return { chatText, wearSection, keyTag, imagePrompt }
+  return { chatText, wearSection, stateTag, keyTag: stateTag, imagePrompt }
 }
 
 // 旧順序フォーマット（着衣度先行）用のフォールバックパース関数
@@ -256,11 +257,11 @@ function parseOldGemmaSections(output) {
   const preChat = output.slice(0, chatStart).trim()
   const initialChatDelta = output.slice(chatStart + chatPrefixLen).trimStart()
 
-  const keyMatch = preChat.match(KEY_TAG_PATTERN)
+  const keyMatch = preChat.match(STATE_TAG_PATTERN)
   const promptMatch = preChat.match(IMAGE_PROMPT_PATTERN)
 
   let wearSection = ''
-  let keyTag = ''
+  let stateTag = ''
   let imagePrompt = ''
 
   if (keyMatch || promptMatch) {
@@ -272,7 +273,7 @@ function parseOldGemmaSections(output) {
     if (keyMatch) {
       const kStart = keyMatch.index + keyMatch[0].length
       const kEnd = promptMatch && promptMatch.index > keyMatch.index ? promptMatch.index : preChat.length
-      keyTag = preChat.slice(kStart, kEnd).trim().split('\n')[0].replace(/^\[+|\]+$/g, '').trim()
+      stateTag = preChat.slice(kStart, kEnd).trim().split('\n')[0].replace(/^\[+|\]+$/g, '').trim()
     }
     if (promptMatch) {
       const pStart = promptMatch.index + promptMatch[0].length
@@ -293,14 +294,14 @@ function parseOldGemmaSections(output) {
     const cleanedItems = otherLines.map(l => l.replace(/^\[+|\]+$/g, '').trim()).filter(Boolean)
     if (cleanedItems.length === 1) {
       if (cleanedItems[0].includes(',')) imagePrompt = cleanedItems[0]
-      else keyTag = cleanedItems[0]
+      else stateTag = cleanedItems[0]
     } else if (cleanedItems.length >= 2) {
-      keyTag = cleanedItems[0]
+      stateTag = cleanedItems[0]
       imagePrompt = cleanedItems.slice(1).join(', ')
     }
   }
 
-  return { wearSection, keyTag, imagePrompt, initialChatDelta }
+  return { wearSection, stateTag, keyTag: stateTag, imagePrompt, initialChatDelta }
 }
 
 export default async function handler(req, res) {
@@ -390,7 +391,7 @@ export default async function handler(req, res) {
       }
       const parsed = parseOldGemmaSections(output)
       let wearSection = parsed?.wearSection || ''
-      let keyTag = parsed?.keyTag || ''
+      let stateTag = parsed?.stateTag || parsed?.keyTag || ''
       let imagePrompt = parsed?.imagePrompt || character.last_image_prompt || ''
 
       let finalImagePrompt = imagePrompt
@@ -400,7 +401,8 @@ export default async function handler(req, res) {
           character,
           wearSection,
           rawImagePrompt: imagePrompt,
-          keyTag,
+          stateTag,
+          keyTag: stateTag,
         })
         console.log('Completed image prompt (old format fallback):', finalImagePrompt)
       } catch (promptErr) {
@@ -433,12 +435,12 @@ export default async function handler(req, res) {
 
       // 2. 言語生成モデルが生成した画像生成タグの完全な受け取りとプロンプト完成処理
       const wearSection = parsedSections?.wearSection || ''
-      const keyTag = parsedSections?.keyTag || ''
+      const stateTag = parsedSections?.stateTag || parsedSections?.keyTag || ''
       const rawImagePrompt = parsedSections?.imagePrompt || character.last_image_prompt || ''
 
       console.log('--- Received image generation tags from model ---')
       console.log('wearSection:\n', wearSection)
-      console.log('keyTag:', keyTag)
+      console.log('stateTag:', stateTag)
       console.log('rawImagePrompt:', rawImagePrompt)
 
       // 画像生成タグの修正手順（completeImagePrompt）を一切変えずに実行
@@ -449,7 +451,8 @@ export default async function handler(req, res) {
           character,
           wearSection,
           rawImagePrompt,
-          keyTag,
+          stateTag,
+          keyTag: stateTag,
         })
         console.log('Completed final image prompt:', finalImagePrompt)
       } catch (promptErr) {
