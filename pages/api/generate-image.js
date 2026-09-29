@@ -104,7 +104,7 @@ export default async function handler(req, res) {
                 console.log(`Sending prediction request using candidate: ${candidateLabel}...`);
                 const result = await client.predict("/on_generate", [
                     finalPrompt,        // prompt (Detailed Prompt: 既存のプロンプト処理をそのまま維持)
-                    "Anime",            // style (Style Preset: Anime)
+                    "Artistic",            // style (Style Preset: Anime)
                     NEGATIVE_PROMPT,    // neg_prompt (アニメ向けネガティブプロンプト)
                     20,                 // steps (10 - 50)
                     6,                  // cfg (1.0 - 15.0)
